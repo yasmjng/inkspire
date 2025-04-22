@@ -1,4 +1,4 @@
-Copyright © 2025 [Your Name]
+Copyright © 2025 [Yasmin Gunes]
 
 All rights reserved.
 
