@@ -1,3 +1,4 @@
+// all my import stuff
 import SwiftUI
 import UIKit
 import Combine
@@ -8,16 +9,19 @@ import Charts
 import PDFKit
 import UniformTypeIdentifiers
 
-// Extension to UIBezierPath to calculate path length and point at percentage
+
+//extensions listed at top of file (swift convention)
+
+// extension to UIBezierPath to calculate path length and point at percentage
 extension UIBezierPath {
     var length: CGFloat {
         var pathLength: CGFloat = 0
         var currentPoint = CGPoint.zero
-        
-        // Create a helper function to process each path element
+
+        // helper function to process each path element
         func processPathElement(_ element: UnsafePointer<CGPathElement>) {
             let points = element.pointee.points
-            
+
             switch element.pointee.type {
             case .moveToPoint:
                 currentPoint = points[0]
@@ -27,13 +31,13 @@ extension UIBezierPath {
                 currentPoint = nextPoint
             case .addQuadCurveToPoint:
                 let nextPoint = points[1]
-                // Use more accurate curve length calculation for quad curves
+                // use more accurate curve length calculation for quad curves
                 let controlPoint = points[0]
                 pathLength += approximateCurveLength(start: currentPoint, control: controlPoint, end: nextPoint, steps: 10)
                 currentPoint = nextPoint
             case .addCurveToPoint:
                 let nextPoint = points[2]
-                // Use more accurate curve length calculation for cubic curves
+                // use more accurate curve length calculation for cubic curves
                 let control1 = points[0]
                 let control2 = points[1]
                 pathLength += approximateCurveLength(start: currentPoint, control1: control1, control2: control2, end: nextPoint, steps: 10)
@@ -44,151 +48,148 @@ extension UIBezierPath {
                 break
             }
         }
-        
-        // Use the helper function with applyWithBlock
+
         cgPath.applyWithBlock(processPathElement)
-        
         return pathLength
     }
-    
-    // Helper for more accurate curve length
+
+
+    // make curve length more accurate for any Bézier curve
+    private func approximateCurveLength(points: [CGPoint], steps: Int) -> CGFloat {
+        var length: CGFloat = 0
+        var prevPoint = points.first!
+        let count = points.count
+
+        for i in 1...steps {
+            let t = CGFloat(i) / CGFloat(steps)
+            let t1 = 1 - t
+            let point: CGPoint
+
+            switch count {
+            case 3:
+                // quadratic Bézier
+                point = CGPoint(
+                    x: pow(t1, 2) * points[0].x + 2 * t1 * t * points[1].x + pow(t, 2) * points[2].x,
+                    y: pow(t1, 2) * points[0].y + 2 * t1 * t * points[1].y + pow(t, 2) * points[2].y
+                )
+            case 4:
+                // cubic Bézier
+                point = CGPoint(
+                    x: pow(t1, 3) * points[0].x + 3 * pow(t1, 2) * t * points[1].x + 3 * t1 * pow(t, 2) * points[2].x + pow(t, 3) * points[3].x,
+                    y: pow(t1, 3) * points[0].y + 3 * pow(t1, 2) * t * points[1].y + 3 * t1 * pow(t, 2) * points[2].y + pow(t, 3) * points[3].y
+                )
+            default:
+                fatalError("Unsupported number of points for curve length calculation")
+            }
+
+            length += hypot(point.x - prevPoint.x, point.y - prevPoint.y)
+            prevPoint = point
+        }
+
+        return length
+    }
+
+    // makes quad curve length more acc
     private func approximateCurveLength(start: CGPoint, control: CGPoint, end: CGPoint, steps: Int) -> CGFloat {
-        var length: CGFloat = 0
-        var prevPoint = start
-        
-        for i in 1...steps {
-            let t = CGFloat(i) / CGFloat(steps)
-            let t1 = 1 - t
-            let point = CGPoint(
-                x: pow(t1, 2) * start.x + 2 * t1 * t * control.x + pow(t, 2) * end.x,
-                y: pow(t1, 2) * start.y + 2 * t1 * t * control.y + pow(t, 2) * end.y
-            )
-            length += hypot(point.x - prevPoint.x, point.y - prevPoint.y)
-            prevPoint = point
-        }
-        
-        return length
+        return approximateCurveLength(points: [start, control, end], steps: steps)
     }
-    
-    // Helper for more accurate cubic curve length
+
+    // makes cubic curve length more acc
     private func approximateCurveLength(start: CGPoint, control1: CGPoint, control2: CGPoint, end: CGPoint, steps: Int) -> CGFloat {
-        var length: CGFloat = 0
-        var prevPoint = start
-        
-        for i in 1...steps {
-            let t = CGFloat(i) / CGFloat(steps)
-            let t1 = 1 - t
-            let point = CGPoint(
-                x: pow(t1, 3) * start.x + 3 * pow(t1, 2) * t * control1.x + 3 * t1 * pow(t, 2) * control2.x + pow(t, 3) * end.x,
-                y: pow(t1, 3) * start.y + 3 * pow(t1, 2) * t * control1.y + 3 * t1 * pow(t, 2) * control2.y + pow(t, 3) * end.y
-            )
-            length += hypot(point.x - prevPoint.x, point.y - prevPoint.y)
-            prevPoint = point
-        }
-        
-        return length
+        return approximateCurveLength(points: [start, control1, control2, end], steps: steps)
     }
-    
+
     func point(at percentage: CGFloat) -> CGPoint {
         let targetLength = length * percentage
         var currentLength: CGFloat = 0
         var lastPoint = CGPoint.zero
         var resultPoint = CGPoint.zero
         var foundPoint = false
-        
-        // Create a helper function to process each path element
+
+        // processes each path element
         func processPathElement(_ element: UnsafePointer<CGPathElement>) {
             if foundPoint { return }
-            
             let points = element.pointee.points
-            
+
             switch element.pointee.type {
             case .moveToPoint:
                 lastPoint = points[0]
             case .addLineToPoint:
                 let nextPoint = points[0]
                 let segmentLength = hypot(nextPoint.x - lastPoint.x, nextPoint.y - lastPoint.y)
-                
+
                 if currentLength + segmentLength >= targetLength {
-                    let remainingLength = targetLength - currentLength
-                    let segmentPercentage = remainingLength / segmentLength
-                    
+                    let remaining = targetLength - currentLength
+                    let pct = remaining / segmentLength
                     resultPoint = CGPoint(
-                        x: lastPoint.x + (nextPoint.x - lastPoint.x) * segmentPercentage,
-                        y: lastPoint.y + (nextPoint.y - lastPoint.y) * segmentPercentage
+                        x: lastPoint.x + (nextPoint.x - lastPoint.x) * pct,
+                        y: lastPoint.y + (nextPoint.y - lastPoint.y) * pct
                     )
                     foundPoint = true
                 }
-                
+
                 currentLength += segmentLength
                 lastPoint = nextPoint
             case .addQuadCurveToPoint:
                 let controlPoint = points[0]
                 let endPoint = points[1]
-                
-                // Sample quad curve to find point
+                // finds point
                 let curveLength = approximateCurveLength(start: lastPoint, control: controlPoint, end: endPoint, steps: 10)
-                
+
                 if currentLength + curveLength >= targetLength {
                     let steps = 50 // More steps for accuracy
-                    let remainingLength = targetLength - currentLength
-                    let segmentPercentage = remainingLength / curveLength
-                    
-                    // Find more accurate point on curve
-                    let t = findParameterForLength(start: lastPoint, control: controlPoint, end: endPoint, targetLength: segmentPercentage * curveLength, steps: steps)
+                    let remaining = targetLength - currentLength
+                    let pct = remaining / curveLength
+
+                    // finds more accurate point on curve
+                    let t = findParameterForLength(start: lastPoint, control: controlPoint, end: endPoint, targetLength: pct * curveLength, steps: steps)
                     let t1 = 1 - t
-                    
                     resultPoint = CGPoint(
                         x: pow(t1, 2) * lastPoint.x + 2 * t1 * t * controlPoint.x + pow(t, 2) * endPoint.x,
                         y: pow(t1, 2) * lastPoint.y + 2 * t1 * t * controlPoint.y + pow(t, 2) * endPoint.y
                     )
                     foundPoint = true
                 }
-                
+
                 currentLength += curveLength
                 lastPoint = endPoint
             case .addCurveToPoint:
                 let control1 = points[0]
                 let control2 = points[1]
                 let endPoint = points[2]
-                
-                // Sample cubic curve to find point
+                // sample cubic curve to find point
                 let curveLength = approximateCurveLength(start: lastPoint, control1: control1, control2: control2, end: endPoint, steps: 10)
-                
+
                 if currentLength + curveLength >= targetLength {
-                    let steps = 50 // More steps for accuracy
-                    let remainingLength = targetLength - currentLength
-                    let segmentPercentage = remainingLength / curveLength
-                    
-                    // Find more accurate point on curve
-                    let t = findParameterForLength(start: lastPoint, control1: control1, control2: control2, end: endPoint, targetLength: segmentPercentage * curveLength, steps: steps)
+                    let steps = 50 // higher steps for accuracy
+                    let remaining = targetLength - currentLength
+                    let pct = remaining / curveLength
+
+                    let t = findParameterForLength(start: lastPoint, control1: control1, control2: control2, end: endPoint, targetLength: pct * curveLength, steps: steps)
                     let t1 = 1 - t
-                    
                     resultPoint = CGPoint(
                         x: pow(t1, 3) * lastPoint.x + 3 * pow(t1, 2) * t * control1.x + 3 * t1 * pow(t, 2) * control2.x + pow(t, 3) * endPoint.x,
                         y: pow(t1, 3) * lastPoint.y + 3 * pow(t1, 2) * t * control1.y + 3 * t1 * pow(t, 2) * control2.y + pow(t, 3) * endPoint.y
                     )
                     foundPoint = true
                 }
-                
+
                 currentLength += curveLength
                 lastPoint = endPoint
             default:
                 break
             }
         }
-        
-        // Use the helper function with applyWithBlock
+
         cgPath.applyWithBlock(processPathElement)
-        
         return resultPoint
     }
-    
-    // Helper to find parameter value t for quad curve
+
+    // finds parameter value t for quad curve
     private func findParameterForLength(start: CGPoint, control: CGPoint, end: CGPoint, targetLength: CGFloat, steps: Int) -> CGFloat {
         var accumulatedLength: CGFloat = 0
         var prevPoint = start
-        
+
         for i in 1...steps {
             let t = CGFloat(i) / CGFloat(steps)
             let t1 = 1 - t
@@ -196,25 +197,24 @@ extension UIBezierPath {
                 x: pow(t1, 2) * start.x + 2 * t1 * t * control.x + pow(t, 2) * end.x,
                 y: pow(t1, 2) * start.y + 2 * t1 * t * control.y + pow(t, 2) * end.y
             )
-            
             let segmentLength = hypot(point.x - prevPoint.x, point.y - prevPoint.y)
             accumulatedLength += segmentLength
-            
+
             if accumulatedLength >= targetLength {
                 return t
             }
-            
+
             prevPoint = point
         }
-        
+
         return 1.0
     }
-    
-    // Helper to find parameter value t for cubic curve
+
+    // finds parameter value t for cubic curve
     private func findParameterForLength(start: CGPoint, control1: CGPoint, control2: CGPoint, end: CGPoint, targetLength: CGFloat, steps: Int) -> CGFloat {
         var accumulatedLength: CGFloat = 0
         var prevPoint = start
-        
+
         for i in 1...steps {
             let t = CGFloat(i) / CGFloat(steps)
             let t1 = 1 - t
@@ -222,26 +222,25 @@ extension UIBezierPath {
                 x: pow(t1, 3) * start.x + 3 * pow(t1, 2) * t * control1.x + 3 * t1 * pow(t, 2) * control2.x + pow(t, 3) * end.x,
                 y: pow(t1, 3) * start.y + 3 * pow(t1, 2) * t * control1.y + 3 * t1 * pow(t, 2) * control2.y + pow(t, 3) * end.y
             )
-            
             let segmentLength = hypot(point.x - prevPoint.x, point.y - prevPoint.y)
             accumulatedLength += segmentLength
-            
+
             if accumulatedLength >= targetLength {
                 return t
             }
-            
+
             prevPoint = point
         }
-        
+
         return 1.0
     }
 }
 
-// MARK: - Extension to TracingAppView to use enhanced animation
+// tracingappview extension bc it was too long lol
 extension TracingAppView {
     var enhancedAnimationZStack: some View {
         ZStack {
-            // Background - dotted paper effect
+            // dotted paper effect 4 aesthetic
             VStack(spacing: 15) {
                 ForEach(0..<20, id: \.self) { _ in
                     HStack(spacing: 15) {
@@ -255,19 +254,19 @@ extension TracingAppView {
             }
             .padding()
 
-            // Faded big letter in background
+            // faded big letter in the background
             Text(letters[currentLetterIndex])
                 .font(.system(size: 200, weight: .bold, design: .rounded))
                 .foregroundColor(Color.gray.opacity(0.1))
 
-            // 🟩 Multi-letter score progress bar (one box per letter)
+            // score progress bar (one box per letter)
             VStack {
                 MultiLetterProgressBar(scores: testScores)
                     .padding(.top, 12)
 
                 Spacer()
 
-                // Live tracing stroke progress
+                // live tracing stroke progress for updates
                 if isTrySampleMode {
                     ProgressView(value: strokeProgress)
                         .progressViewStyle(LinearProgressViewStyle(tint: themedProgressColor(for: strokeProgress)))
@@ -278,7 +277,7 @@ extension TracingAppView {
                 }
             }
 
-            // Letter animation
+            // letter animation
             if isTrySampleMode {
                 if EnhancedLetterPathFactory.letterNeedsPenLifting(letters[currentLetterIndex]) {
                     EnhancedTracingAnimatedPathView(
@@ -297,7 +296,7 @@ extension TracingAppView {
                     .opacity(0.7)
             }
 
-            // Drawn segments
+            // drawn segments
             ForEach(0..<userDrawnSegments.count, id: \.self) { index in
                 userDrawnSegments[index]
                     .stroke(AppTheme.successColor, lineWidth: 6)
@@ -306,20 +305,21 @@ extension TracingAppView {
 
             userDrawnPath
                 .stroke(AppTheme.successColor, lineWidth: 6)
-                .shadow(color: AppTheme.successColor.opacity(0.5), radius: 2)
+                .shadow(Color: AppTheme.successColor.opacity(0.5), radius: 2)
 
-            // Guides
+            // guides
             if showNumberedGuide && !isTrySampleMode {
                 EnhancedNumberedPathGuideView(letter: letters[currentLetterIndex])
             }
 
             if showArrows && !isTrySampleMode {
-                EnhancedDirectionalArrowsView(letter: letters[currentLetterIndex])
+                DirectionalArrowsView(letter: letters[currentLetterIndex], style: .enhanced)
+                    .opacity(guideOpacity)
             }
         }
     }
 
-    // Theme-based live progress color
+    // theme-based live progress colour
     func themedProgressColor(for progress: Double) -> Color {
         switch progress {
         case ..<0.3: return AppTheme.funPink
@@ -338,7 +338,7 @@ extension Binding where Value == Bool {
     }
 }
 
-// Extension for View to apply the enhanced visual preference including dark mode
+// view so that it includes application of the enhanced visual preference (!!!including dark mode)
 extension View {
     
     func enhancedVisualPreference(_ preferences: UserPreferences?) -> some View {
@@ -349,12 +349,13 @@ extension View {
         self.modifier(VisualPreferenceModifier(preferences: preferences))
     }
     
-    // Apply cheerful shadows to elements
+// making view more kiddy
+    //  'cheerful' shadows to elements
     func cheerfulShadow() -> some View {
         self.shadow(color: AppTheme.primaryColor.opacity(0.3), radius: 5, x: 2, y: 2)
     }
     
-    // Apply rainbow gradient background
+    // rainbow gradient background (shifting?)
     func rainbowBackground() -> some View {
         self.background(
             LinearGradient(
@@ -389,7 +390,38 @@ extension Color {
         }
         self.init(.sRGB, red: Double(r)/255, green: Double(g)/255, blue: Double(b)/255, opacity: Double(a)/255)
     }
+    static func fromHex(_ hex: String) -> Color {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int = UInt64()
+        Scanner(string: hex).scanHexInt64(&int)
+
+        let a, r, g, b: UInt64
+        switch hex.count {
+        case 3: // RGB (12-bit)
+            (a, r, g, b) = (255, (int >> 8) * 17,
+                                 (int >> 4 & 0xF) * 17,
+                                 (int & 0xF) * 17)
+        case 6: // RGB (24-bit)
+            (a, r, g, b) = (255, int >> 16,
+                                 int >> 8 & 0xFF,
+                                 int & 0xFF)
+        case 8: // ARGB (32-bit)
+            (a, r, g, b) = (int >> 24,
+                           int >> 16 & 0xFF,
+                           int >> 8 & 0xFF,
+                           int & 0xFF)
+        default:
+            (a, r, g, b) = (255, 255, 0, 0) // fallback red for broken hex
+        }
+
+        return Color(.sRGB,
+                     red: Double(r) / 255,
+                     green: Double(g) / 255,
+                     blue: Double(b) / 255,
+                     opacity: Double(a) / 255)
+    }
 }
+
 extension Array where Element == Double {
     var average: Double {
         isEmpty ? 0 : reduce(0, +) / Double(count)
@@ -399,7 +431,7 @@ extension Array where Element == Double {
 extension HomeDashboardView {
     private var exitButton: some View {
         Button(action: {
-            //  simulate exit via logout or app suspension
+            //  simulate exit via logout ((or app suspension))...
             UIControl().sendAction(#selector(NSXPCConnection.suspend), to: UIApplication.shared, for: nil)
         }) {
             HStack {
@@ -423,40 +455,7 @@ extension Notification.Name {
     static let tracingCompleted = Notification.Name("tracingCompleted")
 }
 
-struct ExportStudentPerformanceView: View {
-    let performance: StudentPerformance
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(performance.studentName)
-                .font(.title)
-                .bold()
-
-            Text("Total Rewards: \(performance.totalRewards)")
-            Text("Streak: \(performance.consecutiveDayStreak) days")
-            Text("Last Practice: \(performance.lastPracticeDate.formatted(date: .abbreviated, time: .omitted))")
-
-            Divider()
-
-            ForEach(performance.letterPerformances.sorted(by: { $0.letter < $1.letter })) { lp in
-                HStack {
-                    Text(lp.letter)
-                        .font(.system(size: 18, weight: .bold))
-                        .frame(width: 30)
-                    Text("Avg: \(Int(lp.averageScore))%")
-                    Spacer()
-                    Text("Attempts: \(lp.attempts)")
-                }
-            }
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-
 // so user can change visual pref (high/low(reg) contrast
-// MARK: - VisualPreferenceModifier (including Dark Mode Support)
 struct VisualPreferenceModifier: ViewModifier {
     let preferences: UserPreferences?
 
@@ -471,7 +470,7 @@ struct VisualPreferenceModifier: ViewModifier {
 
             case .lightMode:
                 content
-                    .environment(\.colorScheme, .light)
+                    .environment(\.ColorScheme, .light)
                     .background(AppTheme.adaptiveBackgroundColor(preferences: preferences))
                     .foregroundColor(AppTheme.adaptiveTextColor(preferences: preferences))
 
@@ -482,26 +481,27 @@ struct VisualPreferenceModifier: ViewModifier {
         } else {
             // Default fallback if preferences are missing
             content
-                .environment(\.colorScheme, .light)
+                .environment(\.ColorScheme, .light)
                 .background(AppTheme.backgroundColor)
                 .foregroundColor(.primary)
         }
     }
 }
 
-// MARK: - Sound Manager for Audio Feedback
+// audio feedback
+// audios imported from *** website (can't remember, add later)
 class SoundManager {
     static let shared = SoundManager()
     private var audioPlayers: [String: AVAudioPlayer] = [:]
     private var isMuted = false
     weak var authManager: AuthManager?
     
-    // Sound effects with their file extensions
+    // sound effects with their file extensions (matches desktop)
     private struct SoundFile {
         let name: String
         let ext: String
     }
-    // Sound effects
+    // funny sound effects
     private let successSound = SoundFile(name: "404358__kagateni__success", ext: "wav")
     private let errorSound = SoundFile(name: "351500__thehorriblejoke__error-sound", ext: "mp3")
     private let clickSound = SoundFile(name: "213004__abstraktgeneriert__mouse-click", ext: "wav")
@@ -543,7 +543,7 @@ class SoundManager {
                     player.play()
                 }
             } else {
-                // Try to play it directly if not preloaded
+                // failsafe if not preloaded
                 do {
                     let player = try AVAudioPlayer(contentsOf: url)
                     player.play()
@@ -554,12 +554,13 @@ class SoundManager {
         }
     }
     
-    // Sound effect methods
+    // sound effect methods
     func setMuted(_ muted: Bool) {
         isMuted = muted
     }
     
-    // Update all sound methods to respect the mute setting
+    // sound methods but using the mute setting
+    // if user requests no sound, methods not used
     func playSuccess() {
         if !isMuted {
             playSound(successSound)
@@ -636,8 +637,6 @@ class StudentPerformance: Identifiable, Codable {
     }
 }
 
-
-
 class PerformanceManager {
     static let shared = PerformanceManager()
     private init() {}
@@ -655,7 +654,8 @@ class PerformanceManager {
 
         let previousAverage = letterData.scores.isEmpty ? 0 : (letterData.scores.reduce(0, +) / Double(letterData.scores.count))
         let previousAttempts = letterData.attempts
-
+        
+// emoji 'scores'
         if previousAttempts == 0 { rewardsToAdd.append("🎯") }
         if score >= 90 { rewardsToAdd.append("⭐️") }
         if score >= 95 { rewardsToAdd.append("🌟") }
@@ -785,7 +785,7 @@ struct AccessibilitySettingsView: View {
     @State private var isMuted = false
     @State private var isDarkMode = false
 
-    // Initialize with current preferences
+    // initalise with current preferences :)
     init(currentPreferences: UserPreferences) {
         _preferences = State(initialValue: currentPreferences)
         _isMuted = State(initialValue: currentPreferences.soundPreference == .none)
@@ -1056,14 +1056,14 @@ struct AccessibilityHelpRow: View {
     }
 }
 
-// MARK: - Theme Helper
+// theme builderrr (initalise Colors w hex codes)
 struct AppTheme {
-    // MARK: - Fonts
+    // Fonts
     static func roundedFont(size: CGFloat, weight: Font.Weight = .regular) -> Font {
         return .system(size: size, weight: weight, design: .rounded)
     }
-
-    // MARK: - Core Colors
+ 
+    //  Core Colours (have to use american spelling)
     static let primaryColor = Color.fromHex("#FF6B6B")
     static let secondaryColor = Color.fromHex("#4ECDC4")
     static let accentColor = Color.fromHex("#FFD166")
@@ -1073,7 +1073,7 @@ struct AppTheme {
     static let warningColor = Color.fromHex("#FFD166")
     static let errorColor = Color.fromHex("#FF6B6B")
 
-    // MARK: - Dark Mode Colors
+    // Dark Mode Colours
     static let primaryColorDark = Color.fromHex("#FF8A8A")
     static let secondaryColorDark = Color.fromHex("#64FFE3")
     static let accentColorDark = Color.fromHex("#FFE066")
@@ -1081,7 +1081,7 @@ struct AppTheme {
     static let successColorDark = Color.fromHex("#00FA9A")
     static let errorColorDark = Color.fromHex("#FF8888")
 
-    // MARK: - Fun Extras
+    // Fun Extras
     static let happyCharacters = ["🦊", "🐰", "🐶", "🐱"]
     static let rewardStickers = ["⭐️", "🎉", "🏆", "🧸", "🍭"]
     static let funPurple = Color.fromHex("#9B5DE5")
@@ -1095,7 +1095,7 @@ struct AppTheme {
         return funColors.randomElement() ?? funPurple
     }
 
-    // MARK: - Adaptive Color Functions
+    // adaptive Colour functions (for user modifications)
     static func adaptiveBackgroundColor(preferences: UserPreferences?) -> Color {
         preferences?.visualPreference == .darkMode ? backgroundColorDark : Color.fromHex("#F5FAFF")
     }
@@ -1133,42 +1133,7 @@ struct AppTheme {
     }
 }
 
-// MARK: - Hex Color Initializer
-extension Color {
-    static func fromHex(_ hex: String) -> Color {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int = UInt64()
-        Scanner(string: hex).scanHexInt64(&int)
-
-        let a, r, g, b: UInt64
-        switch hex.count {
-        case 3: // RGB (12-bit)
-            (a, r, g, b) = (255, (int >> 8) * 17,
-                                 (int >> 4 & 0xF) * 17,
-                                 (int & 0xF) * 17)
-        case 6: // RGB (24-bit)
-            (a, r, g, b) = (255, int >> 16,
-                                 int >> 8 & 0xFF,
-                                 int & 0xFF)
-        case 8: // ARGB (32-bit)
-            (a, r, g, b) = (int >> 24,
-                           int >> 16 & 0xFF,
-                           int >> 8 & 0xFF,
-                           int & 0xFF)
-        default:
-            (a, r, g, b) = (255, 255, 0, 0) // fallback red for broken hex
-        }
-
-        return Color(.sRGB,
-                     red: Double(r) / 255,
-                     green: Double(g) / 255,
-                     blue: Double(b) / 255,
-                     opacity: Double(a) / 255)
-    }
-}
-
-
-// Helper function for progress colors
+// Helper function for progress Colou rs
 func progressColor(_ value: Double) -> Color {
     if value >= 85 { return .green }        // success
     else if value >= 70 { return .yellow }  // almost there
@@ -1176,18 +1141,12 @@ func progressColor(_ value: Double) -> Color {
     else { return .red }                    // needs improvement
 }
 
-enum SQLiteError: Error {
-    case failedToSave
-    case invalidData
-}
-
-
-// MARK: - Enhanced User Authentication Models with User Preferences
+// user auth models w user preference
+// enum definitions (dashboardscreen n timeframe lower down)
 enum UserRole: String, Codable, Equatable {
     case student
     case teacher
 }
-
 
 enum VisualPreference: String, Codable {
     case lightMode
@@ -1225,7 +1184,7 @@ struct MultiLetterProgressBar: View {
             HStack(spacing: 4) {
                 ForEach(0..<scores.count, id: \.self) { index in
                     Capsule()
-                        .fill(colorForScore(scores[index]))
+                        .fill(ColorForScore(scores[index]))
                         .frame(width: segmentWidth, height: 6)
                 }
             }
@@ -1235,7 +1194,7 @@ struct MultiLetterProgressBar: View {
         .frame(height: 10)
     }
 
-    func colorForScore(_ score: Double?) -> Color {
+    func ColorForScore(_ score: Double?) -> Color {
         guard let score = score else {
             return Color.gray.opacity(0.3)
         }
@@ -1249,13 +1208,10 @@ struct MultiLetterProgressBar: View {
     }
 }
 
-
-
-
 struct UserPreferences: Codable {
     var fontSizeAdjustment: CGFloat = 0.0
     var visualPreference: VisualPreference = .lightMode
-    var preferredColorHex: String = "#5E60CE" // Store color as hex
+    var preferredColorHex: String = "#5E60CE" // col stored as hex
     var characterEmoji: String = "🦊"
     var soundPreference: SoundPreference = .all
     var animationsEnabled: Bool = true
@@ -1272,7 +1228,7 @@ struct UserPreferences: Codable {
 struct User: Identifiable, Codable {
     var id: String
     var username: String
-    private var hashedPassword: String // Store the hashed password
+    private var hashedPassword: String // stores the hashed password
     
     var role: UserRole
     var fullName: String
@@ -1284,7 +1240,7 @@ struct User: Identifiable, Codable {
         case id, username, hashedPassword, role, fullName, dateOfBirth, preferences
     }
     
-    // Make hashPassword static - doesn't need to access self
+    // make hashPassword static - doesn't need to access self
     private static func hashPassword(_ password: String) -> String {
         let data = Data(password.utf8)
         let hashed = SHA256.hash(data: data)
@@ -1296,7 +1252,7 @@ struct User: Identifiable, Codable {
         return hashedPassword
     }
     
-    // Store the hashed password during creation
+    // store the hashed password during creation
     init(id: String, username: String, password: String, role: UserRole, fullName: String = "", dateOfBirth: Date = Date()) {
         self.id = id
         self.username = username
@@ -1306,12 +1262,12 @@ struct User: Identifiable, Codable {
         self.dateOfBirth = dateOfBirth
     }
     
-    // Verify entered password against the stored hash
+    // verify entered password against the stored hash
     func verifyPassword(_ password: String) -> Bool {
         return User.hashPassword(password) == hashedPassword // Use the static method
     }
     
-    // Encode to preserve user data (including hashed password)
+    // preserves user data (including hashed password)
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
@@ -1323,7 +1279,7 @@ struct User: Identifiable, Codable {
         try container.encode(preferences, forKey: .preferences)
     }
     
-    // Decode user data
+    // decode user data
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
@@ -1334,7 +1290,7 @@ struct User: Identifiable, Codable {
         fullName = try container.decode(String.self, forKey: .fullName)
         dateOfBirth = try container.decode(Date.self, forKey: .dateOfBirth)
         
-        // Add backwards compatibility for users without preferences
+        // add backwards compatibility for users without preferences
         if container.contains(.preferences) {
             preferences = try container.decode(UserPreferences.self, forKey: .preferences)
         } else {
@@ -1343,57 +1299,29 @@ struct User: Identifiable, Codable {
     }
 }
 
-// MARK: - Enhanced Student Performance Data with Visual Rewards
+// includes student performane data w visual rewards
 struct LetterPerformance: Identifiable, Codable {
     var id = UUID()
     var letter: String
-    var scores: [Double] // Store multiple scores for trending
+    var scores: [Double] // store multiple scores for trending
     var attempts: Int
     var lastPracticed: Date
     var userId: String = ""
-    var rewards: [String] = [] // Stickers/rewards collected for this letter
+    var rewards: [String] = [] // stickers/rewards collected for this letter
     var previousAverage: Double? = nil
     
     var averageScore: Double {
         scores.isEmpty ? 0 : scores.reduce(0, +) / Double(scores.count)
     }
     
-    // Check if letter is mastered (over 85% score)
+    // check if letter is mastered (over 85% score)
     var isMastered: Bool {
         averageScore >= 85 && attempts >= 3
     }
 }
 
-struct RewardData: Codable, Identifiable {
-    var id = UUID()
-    var letter: String
-    var emoji: String
-    var dateEarned: Date
-    var score: Double
-    var milestoneType: MilestoneType
-    
-    enum MilestoneType: String, Codable {
-        case firstAttempt
-        case highScore
-        case mastery
-        case improvement
-        case streak
-    }
-    
-    // Helper to get readable milestone name
-    var milestoneName: String {
-        switch milestoneType {
-        case .firstAttempt: return "First Try"
-        case .highScore: return "High Score"
-        case .mastery: return "Mastery"
-        case .improvement: return "Big Improvement"
-        case .streak: return "Practice Streak"
-        }
-    }
-}
-
 class AuthManager: ObservableObject {
-    // MARK: - Published Properties
+    // published properties
     @Published var currentUser: User?
     @Published var isAuthenticated = false
     @Published var students: [User] = []
@@ -1401,13 +1329,12 @@ class AuthManager: ObservableObject {
     @Published var users: [User] = []
     @Published var currentPerformance: StudentPerformance?
 
-    // MARK: - Constants
+    // Constants
     private let userDefaultsKey = "TracingAppUsers"
     private var database: OpaquePointer? {
         return SQLiteManager.shared.database
     }
 
-    // MARK: - Init
     init() {
         SoundManager.shared.preloadSounds()
 
@@ -1423,7 +1350,7 @@ class AuthManager: ObservableObject {
         }
     }
 
-    // MARK: - User Management
+    // user management
     func loadUsers() {
         if let data = UserDefaults.standard.data(forKey: userDefaultsKey) {
             do {
@@ -1448,7 +1375,7 @@ class AuthManager: ObservableObject {
         }
     }
 
-    // MARK: - Authentication
+    // authenticationnnn
     func login(username: String, password: String) -> Bool {
         let allUsers = students + teachers
         if let user = allUsers.first(where: { $0.username == username && $0.verifyPassword(password) }) {
@@ -1501,7 +1428,7 @@ class AuthManager: ObservableObject {
         return true
     }
     
-    // MARK: - Student Performance
+    // student performance
     func loadStudentPerformance(for studentId: String) -> StudentPerformance? {
         guard let basic = getStudentPerformance(for: studentId) else {
             return nil
@@ -1528,35 +1455,33 @@ class AuthManager: ObservableObject {
         )
     }
     
-    // MARK: - SQLite Helper Methods
-    // Implementation for the method that was only declared earlier
+    // sqlite helper methods
     func getStudentPerformance(for studentId: String) -> (name: String, totalRewards: Int, streak: Int, lastPracticeDate: Date)? {
         return SQLiteManager.shared.getStudentPerformance(for: studentId)
     }
     
-    // Implementation for the method that was only declared earlier
     func getLetterPerformances(for studentId: String) -> [String: (scores: [Double], attempts: Int, lastPracticed: Date?, rewards: [String])] {
         return SQLiteManager.shared.getLetterPerformances(for: studentId)
     }
     
-    // Implementation for getting all scores
+    // implementation for getting all scores
     func getAllSQLiteScores() -> [String: [String: Double?]] {
         return SQLiteManager.shared.getAllScores()
     }
     
-    // Implementation for getting student scores
+    // implementation for getting student scores
     func getStudentSQLiteScores(for studentId: String) -> [String: Double?] {
         return SQLiteManager.shared.getUserScores(userId: studentId)
     }
 
-    // MARK: - SQLite Sync
+    // sqlite sync
     func loadStudentPerformanceIfNeeded() {
         guard let user = currentUser, user.role == .student else { return }
         
         if let performance = getStudentPerformanceFromSQLite(for: user.id) {
             currentPerformance = performance
         } else {
-            // No record, create one and set default performance
+            // create one and set default performance if no record
             SQLiteManager.shared.saveStudentPerformance(
                 id: user.id,
                 name: user.fullName.isEmpty ? user.username : user.fullName,
@@ -1600,18 +1525,18 @@ class AuthManager: ObservableObject {
         saveUsers()
     }
     
-    // MARK: - Performance Updates
+    // performance updates
     func updateStudentPerformance(studentId: String, letter: String, score: Double) {
-        // Update the performance score and letter performance in the SQLite database
+        // update the performance score and letter performance in the database
         PerformanceManager.shared.awardRewards(for: letter, with: score, to: studentId)
         PerformanceManager.shared.updateStreak(for: studentId)
     }
     
     func updateStudentPerformanceWithSQLite(studentId: String, letter: String, score: Double) {
-        // First save the score in the legacy format
+        // save the score in the legacy format
         SQLiteManager.shared.saveLetterScore(userId: studentId, letter: letter, score: score)
         
-        // Then save in the new format with no rewards
+        // save in new format with no rewards
         SQLiteManager.shared.saveLetterPerformance(
             userId: studentId,
             letter: letter,
@@ -1628,11 +1553,10 @@ class AuthManager: ObservableObject {
     func getWeakestLetters(for studentId: String, count: Int = 5) -> [LetterPerformance] {
         guard let performance = currentPerformance else { return [] }
 
-        // Assuming LetterPerformance has a property called averageScore
         let weakest = performance.letterPerformances
-            .filter { $0.attempts > 0 } // Only consider letters that have been attempted
-            .sorted { ($0.averageScore ?? 0) < ($1.averageScore ?? 0) } // Sort by lowest score
-            .prefix(count) // Take the requested number of items
+            .filter { $0.attempts > 0 } // only consider letters that have been attempted
+            .sorted { ($0.averageScore ?? 0) < ($1.averageScore ?? 0) } // sort by lowest score
+            .prefix(count) // take the requested number of items
         
         return Array(weakest)
     }
@@ -1663,13 +1587,15 @@ class AuthManager: ObservableObject {
         var totalRewards = 0
         var lastPractice = Date.distantPast
         var streak = 0
-
+        
+//using paper 2 logic lol
         let infoQuery = """
         SELECT studentName, totalRewards, lastPracticeDate, consecutiveDayStreak
         FROM StudentPerformance
         WHERE id = ?;
         """
-
+// some code borrowed (reference)
+        
         var infoStmt: OpaquePointer? = nil
         if sqlite3_prepare_v2(db, infoQuery, -1, &infoStmt, nil) == SQLITE_OK {
             sqlite3_bind_text(infoStmt, 1, (studentId as NSString).utf8String, -1, nil)
@@ -1738,7 +1664,7 @@ class AuthManager: ObservableObject {
                         previousAverage: previousAvg
                     ))
                 } else {
-                    // Letter has never been practiced
+                    // if letter has never been practiced
                     letterPerformances.append(LetterPerformance(
                         letter: letter,
                         scores: [],
@@ -1766,18 +1692,22 @@ class AuthManager: ObservableObject {
         )
     }
 
-    // MARK: - Default Users (Dev Only)
+    // default users
     private func createDefaultUsers() {
         let teacher = User(
             id: UUID().uuidString,
             username: "teacher",
             password: "password",
             role: .teacher,
+            // my client
             fullName: "Ms. Price"
         )
         teachers.append(teacher)
-
+        
+// for demos
         let sampleStudents = [
+            // random allocations of people ik
+            // own account made
             User(id: UUID().uuidString, username: "yasming", password: "password", role: .student, fullName: "Yasmin Gunes", dateOfBirth: Calendar.current.date(byAdding: .year, value: -7, to: Date())!),
             User(id: UUID().uuidString, username: "abdulboss237", password: "password", role: .student, fullName: "Abdul Goldman", dateOfBirth: Calendar.current.date(byAdding: .year, value: -6, to: Date())!),
             User(id: UUID().uuidString, username: "szymong", password: "password", role: .student, fullName: "Szymon Shah", dateOfBirth: Calendar.current.date(byAdding: .year, value: -8, to: Date())!),
@@ -1801,258 +1731,170 @@ class AuthManager: ObservableObject {
     }
 }
 
-class ExportManager {
-    
-    static func exportCSV(from performances: [StudentPerformance]) -> URL? {
-        let filename = FileManager.default.temporaryDirectory.appendingPathComponent("student_performance_export.csv")
-        var csvText = "Student Name,Letter,Score,Attempts,Last Practiced\n"
-
-        for student in performances {
-            for lp in student.letterPerformances {
-                let row = "\(student.studentName),\(lp.letter),\(String(format: "%.1f", lp.averageScore)),\(lp.attempts),\(lp.lastPracticed.formatted(date: .numeric, time: .omitted))\n"
-                csvText.append(row)
-            }
-        }
-
-        do {
-            try csvText.write(to: filename, atomically: true, encoding: .utf8)
-            return filename
-        } catch {
-            print("❌ CSV export failed: \(error)")
-            return nil
-        }
-    }
-
-    static func exportPDF(from performances: [StudentPerformance]) -> URL? {
-        let pdfFile = FileManager.default.temporaryDirectory.appendingPathComponent("student_performance_export.pdf")
-
-        let pdfMetaData = [
-            kCGPDFContextCreator: "Letter Tracing App",
-            kCGPDFContextAuthor: "Teacher",
-            kCGPDFContextTitle: "Student Performance"
-        ]
-
-        let format = UIGraphicsPDFRendererFormat()
-        format.documentInfo = pdfMetaData as [String: Any]
-
-        let pageWidth = 612.0
-        let pageHeight = 792.0
-        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight), format: format)
-
-        do {
-            try renderer.writePDF(to: pdfFile) { context in
-                context.beginPage()
-                var y: CGFloat = 20
-                let leftPadding: CGFloat = 20
-
-                for student in performances {
-                    let title = "\(student.studentName) — Avg: \(Int(student.overallAverage))%"
-                    title.draw(at: CGPoint(x: leftPadding, y: y), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 16)])
-                    y += 22
-
-                    for lp in student.letterPerformances {
-                        let text = "\(lp.letter): \(Int(lp.averageScore))% (\(lp.attempts)x)"
-                        text.draw(at: CGPoint(x: leftPadding + 10, y: y), withAttributes: [.font: UIFont.systemFont(ofSize: 14)])
-                        y += 18
-
-                        if y > pageHeight - 40 {
-                            context.beginPage()
-                            y = 20
-                        }
-                    }
-
-                    y += 20
-                }
-            }
-            return pdfFile
-        } catch {
-            print("❌ PDF export failed: \(error)")
-            return nil
-        }
-    }
-}
-
+// the export code was
 class ExportHelper {
-    
-    // MARK: - Export CSV (Single Student)
-    static func exportCSV(for performance: StudentPerformance) {
-        var csv = "Letter,Average Score,Attempts\n"
+    private static let tempDir = FileManager.default.temporaryDirectory
 
-        for letter in performance.letterPerformances.sorted(by: { $0.letter < $1.letter }) {
-            csv += "\(letter.letter),\(Int(letter.averageScore)),\(letter.attempts)\n"
+    static func exportCSV(_ performances: [StudentPerformance], fileName: String = "StudentPerformance_Report.csv") {
+        var text = "Student Name,Letter,Score,Attempts,Last Practiced\n"
+        let df = DateFormatter(); df.dateStyle = .short; df.timeStyle = .none
+        performances.forEach { student in
+            student.letterPerformances
+                .sorted { $0.letter < $1.letter }
+                .forEach { lp in
+                    let date = df.string(from: lp.lastPracticed)
+                    let row = [
+                        student.studentName,
+                        lp.letter,
+                        String(format: "%.1f", lp.averageScore),
+                        "\(lp.attempts)",
+                        date
+                    ]
+                    text += row.joined(separator: ",") + "\n"
+                }
         }
-
-        if let data = csv.data(using: .utf8) {
-            saveToFiles(data: data, fileName: "\(performance.studentName)_Report.csv", contentType: .commaSeparatedText)
+        if let data = text.data(using: .utf8) {
+            save(data, name: fileName, type: .commaSeparatedText)
+        }
+    }
+// output formats for teacher dashboard stuff
+    static func exportCSV(_ perf: StudentPerformance, fileName: String? = nil) {
+        let name = fileName ?? "\(perf.studentName.replacingOccurrences(of: " ", with: "_"))_Performance.csv"
+        var text = "Letter,Average Score,Attempts,Last Practiced\n"
+        let df = DateFormatter(); df.dateStyle = .short; df.timeStyle = .none
+        perf.letterPerformances
+            .sorted { $0.letter < $1.letter }
+            .forEach { lp in
+                let date = df.string(from: lp.lastPracticed)
+                let row = [
+                    lp.letter,
+                    String(format: "%.1f", lp.averageScore),
+                    "\(lp.attempts)",
+                    date
+                ]
+                text += row.joined(separator: ",") + "\n"
+            }
+        if let data = text.data(using: .utf8) {
+            save(data, name: name, type: .commaSeparatedText)
         }
     }
 
-    // MARK: - Export CSV (All Students Flat Table)
     static func exportAllStudentsCSV(using auth: AuthManager) async {
-        var csv = "Name,Username,Streak,Total Rewards,Last Practice,Weakest Letters,Alphabet Average,Total Attempts\n"
-
-        for student in auth.students {
-            guard let perf = auth.getStudentPerformanceFromSQLite(for: student.id) else { continue }
-
+        var text = "Name,Username,Streak,Total Rewards,Last Practice,Weakest Letters,Alphabet Average,Total Attempts\n"
+        let iso = ISO8601DateFormatter()
+        auth.students.forEach { student in
+            guard let perf = auth.getStudentPerformanceFromSQLite(for: student.id) else { return }
             let name = student.fullName.isEmpty ? student.username : student.fullName
             let streak = perf.consecutiveDayStreak
             let rewards = perf.totalRewards
-            let lastPractice = ISO8601DateFormatter().string(from: perf.lastPracticeDate)
-            let average = perf.overallAverage
+            let last = iso.string(from: perf.lastPracticeDate)
             let totalAttempts = perf.letterPerformances.map { $0.attempts }.reduce(0, +)
-
-            let weakest: String
-            if totalAttempts == 0 {
-                weakest = "Hasn't practiced yet"
-            } else {
-                weakest = perf.lettersNeedingImprovement.prefix(6).map { $0.letter }.joined(separator: " ")
-            }
-
-            csv += "\(name),\(student.username),\(streak),\(rewards),\(lastPractice),\(weakest),\(Int(average)),\(totalAttempts)\n"
+            let weakest = totalAttempts == 0
+                ? "Hasn't practiced yet"
+                : perf.lettersNeedingImprovement.prefix(6).map { $0.letter }.joined(separator: " ")
+            let avg = Int(perf.overallAverage)
+            let row = [
+                name, student.username,
+                "\(streak)", "\(rewards)",
+                last, weakest,
+                "\(avg)", "\(totalAttempts)"
+            ]
+            text += row.joined(separator: ",") + "\n"
         }
-
-        if let data = csv.data(using: .utf8) {
-            saveToFiles(data: data, fileName: "AllStudents_Report.csv", contentType: .commaSeparatedText)
+        if let data = text.data(using: .utf8) {
+            save(data, name: "AllStudents_Report.csv", type: .commaSeparatedText)
         }
     }
 
-    // MARK: - Export PDF (All Students Flat View)
     static func exportAllStudentsPDF(using auth: AuthManager) async {
-        let pdfMeta = [
-            kCGPDFContextCreator: "Inkspire",
-            kCGPDFContextAuthor: "Teacher Export",
-            kCGPDFContextTitle: "All Students Report"
+        let url = tempDir.appendingPathComponent("AllStudents_Report.pdf")
+        let meta = [
+            kCGPDFContextCreator as String: "Inkspire",
+            kCGPDFContextAuthor as String: "Teacher Export",
+            kCGPDFContextTitle as String: "All Students Report"
         ]
-        
-        let format = UIGraphicsPDFRendererFormat()
-        format.documentInfo = pdfMeta as [String: Any]
-        
-        let pageWidth: CGFloat = 612
-        let pageHeight: CGFloat = 792
-        let margin: CGFloat = 20
-        let columnSpacing: CGFloat = 8
-        let rowHeight: CGFloat = 22
-
-        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight), format: format)
-        
-        let data = renderer.pdfData { ctx in
+        let format = UIGraphicsPDFRendererFormat(); format.documentInfo = meta
+        let rect = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let renderer = UIGraphicsPDFRenderer(bounds: rect, format: format)
+        try? renderer.writePDF(to: url) { ctx in
             ctx.beginPage()
-            var y = margin
-
-            let header = "All Students Report"
-            let headerFont = UIFont.boldSystemFont(ofSize: 20)
-            let subFont = UIFont.systemFont(ofSize: 12)
-            let context = ctx.cgContext
-            header.draw(at: CGPoint(x: margin, y: y), withAttributes: [.font: headerFont])
+            var y: CGFloat = 20
+            "All Students Report".draw(at: CGPoint(x: 20, y: y), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 20)])
             y += 36
-
-            // Column headers
-            let columns = ["Name", "Username", "Streak", "Rewards", "Last Practice", "Weakest Letters", "Avg", "Attempts"]
-            let colWidths = [100.0, 80.0, 40.0, 50.0, 90.0, 130.0, 30.0, 55.0]
-
-            var x = margin
-            for (i, title) in columns.enumerated() {
-                title.draw(at: CGPoint(x: x, y: y), withAttributes: [.font: subFont])
-                x += CGFloat(colWidths[i]) + columnSpacing
+            let cols = ["Name","Username","Streak","Rewards","Last Practice","Weakest Letters","Avg","Attempts"]
+            let widths: [CGFloat] = [100, 80, 40, 50, 90, 130, 30, 55]
+            var x: CGFloat = 20
+            let f = UIFont.systemFont(ofSize: 12)
+            cols.enumerated().forEach { i, title in
+                title.draw(at: CGPoint(x: x, y: y), withAttributes: [.font: f])
+                x += widths[i] + 8
             }
-
-            y += rowHeight
-
-            for student in auth.students {
-                guard let perf = auth.getStudentPerformanceFromSQLite(for: student.id) else { continue }
-
+            y += 22
+            auth.students.forEach { student in
+                guard let perf = auth.getStudentPerformanceFromSQLite(for: student.id) else { return }
                 let name = student.fullName.isEmpty ? student.username : student.fullName
                 let streak = "\(perf.consecutiveDayStreak)"
                 let rewards = "\(perf.totalRewards)"
-                let lastPractice = DateFormatter.localizedString(from: perf.lastPracticeDate, dateStyle: .short, timeStyle: .none)
-                let average = "\(Int(perf.overallAverage))"
-                let attempts = "\(perf.letterPerformances.map { $0.attempts }.reduce(0, +))"
-                
-                let weakest: String
-                if perf.letterPerformances.map({ $0.attempts }).reduce(0, +) == 0 {
-                    weakest = "Hasn't practiced yet"
-                } else {
-                    weakest = perf.lettersNeedingImprovement.prefix(6).map { $0.letter }.joined(separator: " ")
+                let last = DateFormatter.localizedString(from: perf.lastPracticeDate, dateStyle: .short, timeStyle: .none)
+                let attempts = perf.letterPerformances.map({ $0.attempts }).reduce(0, +)
+                let weakest = attempts == 0
+                    ? "Hasn't practiced yet"
+                    : perf.lettersNeedingImprovement.prefix(6).map { $0.letter }.joined(separator: " ")
+                let avg = "\(Int(perf.overallAverage))"
+                let row = [name, student.username, streak, rewards, last, weakest, avg, "\(attempts)"]
+                x = 20
+                row.enumerated().forEach { i, text in
+                    text.draw(at: CGPoint(x: x, y: y), withAttributes: [.font: f])
+                    x += widths[i] + 8
                 }
-
-                let row = [name, student.username, streak, rewards, lastPractice, weakest, average, attempts]
-
-                x = margin
-                for (i, text) in row.enumerated() {
-                    text.draw(at: CGPoint(x: x, y: y), withAttributes: [.font: subFont])
-                    x += CGFloat(colWidths[i]) + columnSpacing
-                }
-
-                y += rowHeight
-
-                // New page if out of room
-                if y + rowHeight > pageHeight - margin {
-                    ctx.beginPage()
-                    y = margin
-                }
+                y += 22
+                if y > rect.height - 20 { ctx.beginPage(); y = 20 }
             }
         }
-        
-        saveToFiles(data: data, fileName: "AllStudents_Report.pdf", contentType: .pdf)
+        present(url)
     }
 
-    // MARK: - Export PDF Utility
     @MainActor
-    static func exportPDF<V: View>(view: V, fileName: String) async {
+    static func exportViewAsPDF<V: View>(_ view: V, fileName: String) async {
         let renderer = ImageRenderer(content: view)
-        guard let image = await renderer.uiImage else {
-            print("❌ Failed to render PDF image")
-            return
-        }
-
-        let pdfData = NSMutableData()
-        let consumer = CGDataConsumer(data: pdfData as CFMutableData)!
-        var mediaBox = CGRect(origin: .zero, size: image.size)
-        guard let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else { return }
-
-        context.beginPDFPage(nil)
-        context.draw(image.cgImage!, in: mediaBox)
-        context.endPDFPage()
-        context.closePDF()
-
-        saveToFiles(data: pdfData as Data, fileName: "\(fileName).pdf", contentType: .pdf)
+        guard let img = await renderer.uiImage else { return }
+        let data = NSMutableData()
+        let consumer = CGDataConsumer(data: data as CFMutableData)!
+        var box = CGRect(origin: .zero, size: img.size)
+        guard let ctx = CGContext(consumer: consumer, mediaBox: &box, nil) else { return }
+        ctx.beginPDFPage(nil)
+        ctx.draw(img.cgImage!, in: box)
+        ctx.endPDFPage()
+        ctx.closePDF()
+        save(data as Data, name: "\(fileName).pdf", type: .pdf)
     }
 
-    // MARK: - Export Chart Snapshot Image
     @MainActor
-    static func exportChartImage<V: View>(view: V, fileName: String = "ChartSnapshot.png") {
+    static func exportViewAsImage<V: View>(_ view: V, fileName: String = "Snapshot.png") {
         let renderer = ImageRenderer(content: view)
-        guard let image = renderer.uiImage else {
-            print("❌ Failed to render chart image")
-            return
-        }
-
-        if let data = image.pngData() {
-            saveToFiles(data: data, fileName: fileName, contentType: .png)
-        }
+        guard let img = renderer.uiImage, let data = img.pngData() else { return }
+        save(data, name: fileName, type: .png)
     }
 
-    // MARK: - File Save Helper
-    static func saveToFiles(data: Data, fileName: String, contentType: UTType) {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-        do {
-            try data.write(to: url)
+    private static func save(_ data: Data, name: String, type: UTType) {
+        let url = tempDir.appendingPathComponent(name)
+        do { try data.write(to: url); present(url) } catch {}
+    }
 
-            DispatchQueue.main.async {
-                let controller = UIDocumentPickerViewController(forExporting: [url])
-                UIApplication.shared.windows.first?.rootViewController?.present(controller, animated: true)
-            }
-        } catch {
-            print("❌ Failed to write file: \(error)")
+    private static func present(_ url: URL) {
+        DispatchQueue.main.async {
+            let picker = UIDocumentPickerViewController(forExporting: [url])
+            UIApplication.shared.windows.first?.rootViewController?.present(picker, animated: true)
         }
     }
 }
 
 
-// MARK: - Path Segment for animating with pen lifts
+// path segment for animating with pen lifts
+// 'pen lifts' og updated bc of letters like A etc
 struct PathSegment {
-    var points: [CGPoint] // Points in this continuous segment
-    var isNewStroke: Bool // Is this the start of a new stroke (pen lifted before this)
+    var points: [CGPoint] // points in this continuous segment
+    var isNewStroke: Bool // is this the start of a new stroke (pen lifted before this)
 }
 
 // Arrow data structure
@@ -2136,19 +1978,21 @@ struct EnhancedArrowShape: Shape {
     }
 }
 
-// MARK: - Tracing Path Definition
+// tracing path definition
+// old code but included in some other stuff so i left it bc i cba
 struct TracingPathDefinition {
     var path: (CGRect) -> Path
     var guidePoints: (CGSize) -> [CGPoint]
     var arrowPaths: (CGSize) -> [ArrowPathData]
     
-    // Define the reference points for scoring - this creates a dense set of points along the path
+    // define the reference points for scoring
+    // dense set of points along the path created
     func referencePoints(in rect: CGRect, pointCount: Int = 100) -> [CGPoint] {
         let fullPath = path(rect)
         let bezierPath = UIBezierPath(cgPath: fullPath.cgPath)
         var points: [CGPoint] = []
         
-        // Sample points along the entire path
+        // sample points along the entire path
         for i in 0...pointCount {
             let t = CGFloat(i) / CGFloat(pointCount)
             points.append(bezierPath.point(at: t))
@@ -2158,20 +2002,20 @@ struct TracingPathDefinition {
     }
 }
 
-// MARK: - Enhanced Tracing Path Definition
+// enhanced tracing path definition (more accurate)
 struct EnhancedTracingPathDefinition {
     var path: (CGRect) -> Path
     var guidePoints: (CGSize) -> [CGPoint]
     var arrowPaths: (CGSize) -> [ArrowPathData]
-    var strokeSegments: (CGSize) -> [PathSegment] // New property for stroke segments
-    
-    // Define the reference points for scoring - this creates a dense set of points along the path
+    var strokeSegments: (CGSize) -> [PathSegment] //(only new inclusion)
+
     func referencePoints(in rect: CGRect, pointCount: Int = 100) -> [CGPoint] {
         let fullPath = path(rect)
         let bezierPath = UIBezierPath(cgPath: fullPath.cgPath)
         var points: [CGPoint] = []
         
-        // Sample points along the entire path
+        // sample points along the entire path
+        // same as ^^
         for i in 0...pointCount {
             let t = CGFloat(i) / CGFloat(pointCount)
             points.append(bezierPath.point(at: t))
@@ -2181,7 +2025,7 @@ struct EnhancedTracingPathDefinition {
     }
 }
     
-// MARK: - Tracing Path View
+// tracing path view
 struct TracingPathView: Shape {
     var letter: String
     
@@ -2197,7 +2041,7 @@ struct EnhancedTracingAnimatedPathView: View {
     var body: some View {
         GeometryReader { geometry in
             if let enhancedPathDef = EnhancedLetterPathFactory.getEnhancedLetterPath(for: letter) {
-                // Use enhanced path with segments for pen lifting
+                // use enhanced path with segments for pen lifting
                 EnhancedPathView(
                     letter: letter,
                     progress: progress,
@@ -2205,7 +2049,7 @@ struct EnhancedTracingAnimatedPathView: View {
                     size: geometry.size
                 )
             } else {
-                // Fallback to original path for letters without pen lifting
+                // fallback to original path for letters without pen lifting
                 TracingAnimatedPathView(
                     letter: letter,
                     progress: progress
@@ -2251,7 +2095,7 @@ struct EnhancedPathView: View {
     }
 }
 
-// MARK: - Animated Path View for Sample Tracing
+// animated path for sample tracing for student
 struct TracingAnimatedPathView: Shape {
     var letter: String
     var progress: CGFloat // 0.0 to 1.0
@@ -2262,7 +2106,7 @@ struct TracingAnimatedPathView: Shape {
     }
     
     func path(in rect: CGRect) -> Path {
-        // Get the complete path
+        // get the complete path
         let fullPath = LetterPathFactory.letterPathDefinition(for: letter).path(rect)
         
         // Create a trimmed path based on progress
@@ -2310,30 +2154,8 @@ struct TracingAnimatedPathView: Shape {
     }
 }
 
-// MARK: - UI Enhancements for Autism-friendly design
-struct VisualSupport: View {
-    let icon: String
-    let text: String
-    var color: Color = AppTheme.primaryColor
-    
-    var body: some View {
-        VStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.system(size: 24))
-                .foregroundColor(color)
-            
-            Text(text)
-                .font(AppTheme.roundedFont(size: 14))
-                .foregroundColor(color)
-                .multilineTextAlignment(.center)
-        }
-        .padding(10)
-        .background(color.opacity(0.1))
-        .cornerRadius(12)
-    }
-}
-
-// MARK: - Animated Characters for Engagement
+// fun characters to boost engagement
+// keeping up w the emoji theme based on gizmo flashcard app bc i find that fun
 
 struct AnimatedCharacter: View {
     let character: String
@@ -2359,7 +2181,8 @@ struct AnimatedCharacter: View {
     }
 }
     
-// 4. Enhanced Character Animation with Expressions
+// added 'expressions'
+// didnt rlly implement but kept code jic
 struct ExpressiveCharacter: View {
     let emoji: String
     let expression: Expression
@@ -2444,7 +2267,7 @@ struct ExpressiveCharacter: View {
                 wiggleAngle = 5
             }
         case .thinking:
-            // Slow, thoughtful tilting
+            // tilting
             withAnimation(Animation.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
                 wiggleAngle = 5
                 bounceOffset = -3
@@ -2452,15 +2275,14 @@ struct ExpressiveCharacter: View {
         }
     }
 }
-
-// MARK: - Numbered Path Guide View
+// to make tracing more accessible
 struct NumberedPathGuideView: View {
     var letter: String
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Get the guide points for the letter
+                // get the guide points for the letter from my other structs
                 let guidePoints = LetterPathFactory.letterPathDefinition(for: letter).guidePoints(geometry.size)
                 ForEach(guidePoints.indices, id: \.self) { index in
                     let point = guidePoints[index]
@@ -2484,30 +2306,7 @@ struct NumberedPathGuideView: View {
         }
     }
 }
-// MARK: - Directional Arrows View
-struct DirectionalArrowsView: View {
-    var letter: String
-    
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                // Get the arrow paths for this letter
-                let arrowPaths = LetterPathFactory.letterPathDefinition(for: letter).arrowPaths(geometry.size)
-                ForEach(arrowPaths, id: \.id) { arrowData in
-                    ArrowShape(
-                        start: arrowData.start,
-                        end: arrowData.end,
-                        arrowSize: 12
-                    )
-                    .stroke(Color.orange, lineWidth: 2.5)
-                    .opacity(0.8)
-                }
-            }
-        }
-    }
-}
 
-// MARK: - Enhanced Numbered Path Guide View
 struct EnhancedNumberedPathGuideView: View {
     var letter: String
     
@@ -2529,7 +2328,7 @@ struct EnhancedNumberedPathGuideView: View {
                         Circle()
                             .fill(Color.white)
                             .frame(width: 26, height: 26)
-                            .shadow(color: AppTheme.primaryColor.opacity(0.5), radius: 2)
+                            .shadow(Color: AppTheme.primaryColor.opacity(0.5), radius: 2)
                         
                         // Number
                         Text("\(index + 1)")
@@ -2542,31 +2341,64 @@ struct EnhancedNumberedPathGuideView: View {
         }
     }
 }
+struct DirectionalArrowsView: View {
+    enum Style {
+        case basic, enhanced
+    }
 
-// MARK: - Enhanced Directional Arrows View
-struct EnhancedDirectionalArrowsView: View {
     var letter: String
-    
+    var style: Style = .enhanced
+
+    private var arrowSize: CGFloat {
+        style == .enhanced ? 14 : 12
+    }
+    private var strokeColor: Color {
+        style == .enhanced ? AppTheme.secondaryColor : .orange
+    }
+    private var lineWidth: CGFloat {
+        style == .enhanced ? 3 : 2.5
+    }
+    private var opacityValue: Double {
+        style == .enhanced ? 1 : 0.8
+    }
+
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Get the arrow paths for this letter
-                let arrowPaths = LetterPathFactory.letterPathDefinition(for: letter).arrowPaths(geometry.size)
+                // Fetch arrow paths for the specified letter and size
+                let arrowPaths = LetterPathFactory
+                    .letterPathDefinition(for: letter)
+                    .arrowPaths(geometry.size)
+
                 ForEach(arrowPaths, id: \.id) { arrowData in
-                    EnhancedArrowShape(
-                        start: arrowData.start,
-                        end: arrowData.end,
-                        arrowSize: 14
-                    )
-                    .stroke(AppTheme.secondaryColor, lineWidth: 3)
-                    .shadow(color: AppTheme.secondaryColor.opacity(0.5), radius: 1)
+                    if style == .enhanced {
+                        EnhancedArrowShape(
+                            start: arrowData.start,
+                            end: arrowData.end,
+                            arrowSize: arrowSize
+                        )
+                        .stroke(strokeColor, lineWidth: lineWidth)
+                        .shadow(color: strokeColor.opacity(0.5), radius: 1)
+                    } else {
+                        ArrowShape(
+                            start: arrowData.start,
+                            end: arrowData.end,
+                            arrowSize: arrowSize
+                        )
+                        .stroke(strokeColor, lineWidth: lineWidth)
+                        .opacity(opacityValue)
+                    }
                 }
             }
         }
     }
 }
 
-// MARK: - Letter Path Factory with improved letter definitions
+
+// 'factory' - each letter is defined with a path i drew w mapping different points doing trial and error
+// ^ hence didnt include lowercase bc thats too difficult lol
+// curved letters later adjusted for
+
 struct LetterPathFactory {
     static func letterPathDefinition(for letter: String) -> TracingPathDefinition {
         switch letter {
@@ -2594,11 +2426,11 @@ struct LetterPathFactory {
                     let width = size.width
                     let height = size.height
                     return [
-                        CGPoint(x: width * 0.2, y: height * 0.8),  // 1. Bottom left
-                        CGPoint(x: width * 0.5, y: height * 0.2),  // 2. Top middle
-                        CGPoint(x: width * 0.8, y: height * 0.8),  // 3. Bottom right
-                        CGPoint(x: width * 0.35, y: height * 0.5), // 4. Left middle (horizontal line start)
-                        CGPoint(x: width * 0.65, y: height * 0.5)  // 5. Right middle (horizontal line end)
+                        CGPoint(x: width * 0.2, y: height * 0.8),  // Bottom left
+                        CGPoint(x: width * 0.5, y: height * 0.2),  // Top middle
+                        CGPoint(x: width * 0.8, y: height * 0.8),  // Bottom right
+                        CGPoint(x: width * 0.35, y: height * 0.5), // Left middle (horizontal line start)
+                        CGPoint(x: width * 0.65, y: height * 0.5)  // Right middle (horizontal line end)
                     ]
                 },
                 arrowPaths: { size in
@@ -2649,7 +2481,8 @@ struct LetterPathFactory {
                     path.move(to: CGPoint(x: width * 0.3, y: height * 0.2))
                     path.addLine(to: CGPoint(x: width * 0.3, y: height * 0.8))
                                             
-                    // Top loop - more curved and less rectangular
+                    // Top loop - (more curved and less rectangular)
+                    // final version
                     path.move(to: CGPoint(x: width * 0.3, y: height * 0.2))
                     path.addLine(to: CGPoint(x: width * 0.55, y: height * 0.2))
                     path.addCurve(
@@ -2675,8 +2508,8 @@ struct LetterPathFactory {
                     let width = size.width
                     let height = size.height
                     return [
-                        CGPoint(x: width * 0.3, y: height * 0.2),   // 1. Top left
-                        CGPoint(x: width * 0.55, y: height * 0.2),  // 2. Top right
+                        CGPoint(x: width * 0.3, y: height * 0.2),   // Top left
+                        CGPoint(x: width * 0.55, y: height * 0.2),  // Top right
                         CGPoint(x: width * 0.65, y: height * 0.32), // 3. Top curve
                         CGPoint(x: width * 0.55, y: height * 0.45), // 4. Middle right (top loop)
                         CGPoint(x: width * 0.3, y: height * 0.45),  // 5. Middle left
@@ -2925,11 +2758,11 @@ struct LetterPathFactory {
                     let width = size.width
                     let height = size.height
                     return [
-                        CGPoint(x: width * 0.25, y: height * 0.2),  // 1. Top left
-                        CGPoint(x: width * 0.45, y: height * 0.2),  // 2. Top right
+                        CGPoint(x: width * 0.25, y: height * 0.2),  // Top left
+                        CGPoint(x: width * 0.45, y: height * 0.2),  // Top right
                         CGPoint(x: width * 0.65, y: height * 0.35), // 3. Upper curve
                         CGPoint(x: width * 0.65, y: height * 0.65), // 4. Lower curve
-                        CGPoint(x: width * 0.45, y: height * 0.8),  // 5. Bottom right
+                        CGPoint(x: width * 0.45, y: height * 0.8),  // Bottom right
                         CGPoint(x: width * 0.25, y: height * 0.8)   // 6. Bottom left
                     ]
                 },
@@ -3028,9 +2861,9 @@ struct LetterPathFactory {
                     let width = size.width
                     let height = size.height
                     return [
-                        CGPoint(x: width * 0.25, y: height * 0.2),  // 1. Top left
-                        CGPoint(x: width * 0.7, y: height * 0.2),   // 2. Top right
-                        CGPoint(x: width * 0.25, y: height * 0.5),  // 3. Middle left
+                        CGPoint(x: width * 0.25, y: height * 0.2),  // Top left
+                        CGPoint(x: width * 0.7, y: height * 0.2),   // Top right
+                        CGPoint(x: width * 0.25, y: height * 0.5),  // Middle left
                         CGPoint(x: width * 0.6, y: height * 0.5),   // 4. Middle right
                         CGPoint(x: width * 0.25, y: height * 0.8),  // 5. Bottom left
                         CGPoint(x: width * 0.7, y: height * 0.8)    // 6. Bottom right
@@ -3098,9 +2931,9 @@ struct LetterPathFactory {
                     let width = size.width
                     let height = size.height
                     return [
-                        CGPoint(x: width * 0.25, y: height * 0.2),  // 1. Top left
-                        CGPoint(x: width * 0.7, y: height * 0.2),   // 2. Top right
-                        CGPoint(x: width * 0.25, y: height * 0.5),  // 3. Middle left
+                        CGPoint(x: width * 0.25, y: height * 0.2),  // Top left
+                        CGPoint(x: width * 0.7, y: height * 0.2),   // Top right
+                        CGPoint(x: width * 0.25, y: height * 0.5),  // Middle left
                         CGPoint(x: width * 0.6, y: height * 0.5),   // 4. Middle right
                         CGPoint(x: width * 0.25, y: height * 0.8)   // 5. Bottom
                     ]
@@ -3279,7 +3112,7 @@ struct LetterPathFactory {
                     let width = size.width
                     let height = size.height
                     return [
-                        CGPoint(x: width * 0.25, y: height * 0.2),  // 1. Top left
+                        CGPoint(x: width * 0.25, y: height * 0.2),  // Top left
                         CGPoint(x: width * 0.25, y: height * 0.5),  // 2. Middle left
                         CGPoint(x: width * 0.25, y: height * 0.8),  // 3. Bottom left
                         CGPoint(x: width * 0.75, y: height * 0.2),  // 4. Top right
@@ -3347,7 +3180,7 @@ struct LetterPathFactory {
                     let width = size.width
                     let height = size.height
                     return [
-                        CGPoint(x: width * 0.35, y: height * 0.2),  // 1. Top left
+                        CGPoint(x: width * 0.35, y: height * 0.2),  // Top left
                         CGPoint(x: width * 0.5, y: height * 0.2),   // 2. Top center
                         CGPoint(x: width * 0.65, y: height * 0.2),  // 3. Top right
                         CGPoint(x: width * 0.5, y: height * 0.5),   // 4. Middle
@@ -3424,8 +3257,8 @@ struct LetterPathFactory {
                     let width = size.width
                     let height = size.height
                     return [
-                        CGPoint(x: width * 0.5, y: height * 0.2),   // 1. Top left
-                        CGPoint(x: width * 0.8, y: height * 0.2),   // 2. Top right
+                        CGPoint(x: width * 0.5, y: height * 0.2),   // Top left
+                        CGPoint(x: width * 0.8, y: height * 0.2),   // Top right
                         CGPoint(x: width * 0.65, y: height * 0.2),  // 3. Top center
                         CGPoint(x: width * 0.65, y: height * 0.6),  // 4. Middle right
                         CGPoint(x: width * 0.5, y: height * 0.75),  // 5. Bottom curve
@@ -3512,11 +3345,11 @@ struct LetterPathFactory {
                     let width = size.width
                     let height = size.height
                     return [
-                        CGPoint(x: width * 0.25, y: height * 0.2),  // 1. Top left
+                        CGPoint(x: width * 0.25, y: height * 0.2),  // Top left
                         CGPoint(x: width * 0.25, y: height * 0.5),  // 2. Middle left
                         CGPoint(x: width * 0.25, y: height * 0.8),  // 3. Bottom left
                         CGPoint(x: width * 0.7, y: height * 0.2),   // 4. Top right
-                        CGPoint(x: width * 0.7, y: height * 0.8)    // 5. Bottom right
+                        CGPoint(x: width * 0.7, y: height * 0.8)    // Bottom right
                     ]
                 },
                 arrowPaths: { size in
@@ -3649,9 +3482,9 @@ struct LetterPathFactory {
                     return [
                         CGPoint(x: width * 0.2, y: height * 0.8),   // 1. Bottom left
                         CGPoint(x: width * 0.2, y: height * 0.2),   // 2. Top left
-                        CGPoint(x: width * 0.5, y: height * 0.5),   // 3. Middle peak
+                        CGPoint(x: width * 0.5, y: height * 0.5),   // Middle peak
                         CGPoint(x: width * 0.8, y: height * 0.2),   // 4. Top right
-                        CGPoint(x: width * 0.8, y: height * 0.8)    // 5. Bottom right
+                        CGPoint(x: width * 0.8, y: height * 0.8)    // Bottom right
                     ]
                 },
                 arrowPaths: { size in
@@ -3729,7 +3562,7 @@ struct LetterPathFactory {
                     return [
                         CGPoint(x: width * 0.25, y: height * 0.8),  // 1. Bottom left
                         CGPoint(x: width * 0.25, y: height * 0.2),  // 2. Top left
-                        CGPoint(x: width * 0.5, y: height * 0.5),   // 3. Middle diagonal
+                        CGPoint(x: width * 0.5, y: height * 0.5),   // Middle diagonal
                         CGPoint(x: width * 0.75, y: height * 0.8),  // 4. Bottom right
                         CGPoint(x: width * 0.75, y: height * 0.2)   // 5. Top right
                     ]
@@ -3794,7 +3627,7 @@ struct LetterPathFactory {
                     let height = size.height
                     return [
                         CGPoint(x: width * 0.5, y: height * 0.2),   // 1. Top
-                        CGPoint(x: width * 0.75, y: height * 0.35), // 2. Top right
+                        CGPoint(x: width * 0.75, y: height * 0.35), // Top right
                         CGPoint(x: width * 0.75, y: height * 0.65), // 3. Bottom right
                         CGPoint(x: width * 0.5, y: height * 0.8),   // 4. Bottom
                         CGPoint(x: width * 0.25, y: height * 0.65), // 5. Bottom left
@@ -4032,7 +3865,7 @@ struct LetterPathFactory {
                     let height = size.height
                     return [
                         CGPoint(x: width * 0.5, y: height * 0.2),   // 1. Top
-                        CGPoint(x: width * 0.75, y: height * 0.35), // 2. Top right
+                        CGPoint(x: width * 0.75, y: height * 0.35), // Top right
                         CGPoint(x: width * 0.75, y: height * 0.65), // 3. Bottom right
                         CGPoint(x: width * 0.5, y: height * 0.8),   // 4. Bottom
                         CGPoint(x: width * 0.25, y: height * 0.65), // 5. Bottom left
@@ -4448,7 +4281,7 @@ struct LetterPathFactory {
                     let width = size.width
                     let height = size.height
                     return [
-                        CGPoint(x: width * 0.25, y: height * 0.2),  // 1. Top left
+                        CGPoint(x: width * 0.25, y: height * 0.2),  // Top left
                         CGPoint(x: width * 0.5, y: height * 0.2),   // 2. Top center
                         CGPoint(x: width * 0.75, y: height * 0.2),  // 3. Top right
                         CGPoint(x: width * 0.5, y: height * 0.5),   // 4. Middle
@@ -4506,7 +4339,7 @@ struct LetterPathFactory {
                     let width = size.width
                     let height = size.height
                     return [
-                        CGPoint(x: width * 0.25, y: height * 0.2), // 1. Top left
+                        CGPoint(x: width * 0.25, y: height * 0.2), // Top left
                         CGPoint(x: width * 0.25, y: height * 0.6), // 2. Middle left
                         CGPoint(x: width * 0.5, y: height * 0.8), // 3. Bottom curve
                         CGPoint(x: width * 0.75, y: height * 0.6), // 4. Middle right
@@ -4581,7 +4414,7 @@ struct LetterPathFactory {
                     let width = size.width
                     let height = size.height
                     return [
-                        CGPoint(x: width * 0.25, y: height * 0.2),  // 1. Top left
+                        CGPoint(x: width * 0.25, y: height * 0.2),  // Top left
                         CGPoint(x: width * 0.5, y: height * 0.8),   // 2. Bottom point
                         CGPoint(x: width * 0.75, y: height * 0.2)   // 3. Top right
                     ]
@@ -4626,9 +4459,9 @@ struct LetterPathFactory {
                     let width = size.width
                     let height = size.height
                     return [
-                        CGPoint(x: width * 0.2, y: height * 0.2),   // 1. Top left
+                        CGPoint(x: width * 0.2, y: height * 0.2),   // Top left
                         CGPoint(x: width * 0.35, y: height * 0.8),  // 2. First bottom
-                        CGPoint(x: width * 0.5, y: height * 0.4),   // 3. Middle peak
+                        CGPoint(x: width * 0.5, y: height * 0.4),   // Middle peak
                         CGPoint(x: width * 0.65, y: height * 0.8),  // 4. Second bottom
                         CGPoint(x: width * 0.8, y: height * 0.2)    // 5. Top right
                     ]
@@ -4707,7 +4540,7 @@ struct LetterPathFactory {
                     let width = size.width
                     let height = size.height
                     return [
-                        CGPoint(x: width * 0.25, y: height * 0.2),  // 1. Top left
+                        CGPoint(x: width * 0.25, y: height * 0.2),  // Top left
                         CGPoint(x: width * 0.5, y: height * 0.5),   // 2. Center
                         CGPoint(x: width * 0.75, y: height * 0.8),  // 3. Bottom right
                         CGPoint(x: width * 0.75, y: height * 0.2),  // 4. Top right
@@ -4765,7 +4598,7 @@ struct LetterPathFactory {
                     let width = size.width
                     let height = size.height
                     return [
-                        CGPoint(x: width * 0.25, y: height * 0.2),  // 1. Top left
+                        CGPoint(x: width * 0.25, y: height * 0.2),  // Top left
                         CGPoint(x: width * 0.5, y: height * 0.5),   // 2. Center
                         CGPoint(x: width * 0.75, y: height * 0.2),  // 3. Top right
                         CGPoint(x: width * 0.5, y: height * 0.8)    // 4. Bottom
@@ -4821,11 +4654,11 @@ struct LetterPathFactory {
                     let width = size.width
                     let height = size.height
                     return [
-                        CGPoint(x: width * 0.25, y: height * 0.2), // 1. Top left
-                        CGPoint(x: width * 0.75, y: height * 0.2), // 2. Top right
-                        CGPoint(x: width * 0.5, y: height * 0.5),  // 3. Middle
-                        CGPoint(x: width * 0.25, y: height * 0.8), // 4. Bottom left
-                        CGPoint(x: width * 0.75, y: height * 0.8)  // 5. Bottom right
+                        CGPoint(x: width * 0.25, y: height * 0.2), // Top left
+                        CGPoint(x: width * 0.75, y: height * 0.2), // Top right
+                        CGPoint(x: width * 0.5, y: height * 0.5),  // Middle
+                        CGPoint(x: width * 0.25, y: height * 0.8), // Bottom left
+                        CGPoint(x: width * 0.75, y: height * 0.8)  // Bottom right
                     ]
                 },
                 arrowPaths: { size in
@@ -4874,12 +4707,14 @@ struct LetterPathFactory {
             
             
         default:
-            // Default simple path if letter not implemented
+            // default simple path if letter not implemented
             return createDefaultLetterPath()
         }
     }
     
     // Creates a default letter path for any unimplemented letter
+    // just in case
+    // reference point
     private static func createDefaultLetterPath() -> TracingPathDefinition {
         return TracingPathDefinition(
             path: { rect in
@@ -4919,12 +4754,13 @@ struct LetterPathFactory {
     }
 }
 
-// MARK: - Letter Path Factory for Letters with Pen Lifts
+// pen lifts version
 struct EnhancedLetterPathFactory {
     // Get enhanced letter path definition for letters that need pen lifting
     static func getEnhancedLetterPath(for letter: String) -> EnhancedTracingPathDefinition? {
         // Only return enhanced definitions for letters that need pen lifts
         switch letter {
+            // decided which letters would need pen lifts
         case "A":
             return createEnhancedA()
         case "E":
@@ -4957,7 +4793,7 @@ struct EnhancedLetterPathFactory {
         return ["A", "E", "F", "H", "I", "J", "K", "Q", "T", "X", "Y"].contains(letter)
     }
     
-    // MARK: - Create Enhanced Letter Definitions
+    // definitons if pen lift
     private static func createEnhancedA() -> EnhancedTracingPathDefinition {
         let originalPathDef = LetterPathFactory.letterPathDefinition(for: "A")
         
@@ -4969,7 +4805,7 @@ struct EnhancedLetterPathFactory {
                 let width = size.width
                 let height = size.height
                 
-                // Three segments: left diagonal, right diagonal, and the horizontal bar
+                // left diagonal, right diagonal + the horizontal bar segments
                 return [
                     // First segment: left diagonal stroke
                     PathSegment(
@@ -5443,75 +5279,9 @@ struct EnhancedLetterPathFactory {
     }
 }
 
-// MARK: - Animated Background Bubbles
-struct AnimatedBubblesBackground: View {
-    let colors: [Color]
-    @State private var bubbles: [BubbleData] = []
-    let bubbleCount: Int
-    
-    init(colors: [Color] = [
-        AppTheme.primaryColor,
-        AppTheme.secondaryColor,
-        AppTheme.primaryColor
-    ], bubbleCount: Int = 15) {
-        self.colors = colors
-        self.bubbleCount = bubbleCount
-    }
-    
-    struct BubbleData: Identifiable {
-        let id = UUID()
-        let position: CGPoint
-        let size: CGFloat
-        let color: Color
-        let speed: Double
-        let delay: Double
-    }
-    
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                ForEach(bubbles) { bubble in
-                    Circle()
-                        .fill(bubble.color.opacity(0.3))
-                        .frame(width: bubble.size, height: bubble.size)
-                        .position(bubble.position)
-                        .animation(
-                            Animation.easeInOut(duration: bubble.speed)
-                                .repeatForever(autoreverses: true)
-                                .delay(bubble.delay),
-                            value: bubble.position
-                        )
-                }
-            }
-            .onAppear {
-                createBubbles(in: geometry.size)
-            }
-        }
-    }
-    
-    private func createBubbles(in size: CGSize) {
-        for _ in 0..<bubbleCount {
-            let randomSize = CGFloat.random(in: 40...120)
-            let randomPosition = CGPoint(
-                x: CGFloat.random(in: 0...size.width),
-                y: CGFloat.random(in: 0...size.height)
-            )
-            
-            let bubble = BubbleData(
-                position: randomPosition,
-                size: randomSize,
-                color: colors.randomElement() ?? .blue,
-                speed: Double.random(in: 4...8),
-                delay: Double.random(in: 0...2)
-            )
-            
-            bubbles.append(bubble)
-        }
-    }
-}
-
-
-// MARK: - Enhanced Visual Feedback Components
+// visual feedback components for better stimulation
+// inspired by gizmooo (same feature but now on my app)
+// code partially borrowed (reference)
 struct ConfettiView: View {
     @State private var isVisible = false
     var count: Int = 20
@@ -5521,8 +5291,9 @@ struct ConfettiView: View {
         ZStack {
             ForEach(0..<count, id: \.self) { i in
                 ConfettiPiece(
-                    color: self.randomColor(),
+                    Color: self.randomColor(),
                     shape: i % 3 == 0 ? .circle : (i % 3 == 1 ? .triangle : .rectangle),
+                    // triangle defined later
                     position: self.randomPosition(),
                     angle: Double.random(in: 0...360),
                     isAnimating: $isAnimating
@@ -5539,8 +5310,8 @@ struct ConfettiView: View {
     }
     
     private func randomColor() -> Color {
-        let colors: [Color] = [.red, .blue, .green, .yellow, .pink, .purple, .orange]
-        return colors.randomElement()!
+        let Colors: [Color] = [.red, .blue, .green, .yellow, .pink, .purple, .orange]
+        return Colors.randomElement()!
     }
     
     private func randomRotation() -> Double {
@@ -5554,14 +5325,14 @@ struct ConfettiView: View {
 
 struct PhysicsConfettiView: View {
     var count: Int = 50
-    var colors: [Color] = [.red, .blue, .green, .yellow, .pink, .purple, .orange]
+    var Colors: [Color] = [.red, .blue, .green, .yellow, .pink, .purple, .orange]
     @State private var isAnimating = false
     
     var body: some View {
         ZStack {
             ForEach(0..<count, id: \.self) { i in
                 ConfettiPiece(
-                    color: colors.randomElement() ?? .blue,
+                    Color: Colors.randomElement() ?? .blue,
                     shape: i % 3 == 0 ? .circle : (i % 3 == 1 ? .triangle : .rectangle),
                     position: randomPosition(),
                     angle: Double.random(in: 0...360),
@@ -5584,7 +5355,7 @@ struct PhysicsConfettiView: View {
     }
 }
 struct ConfettiPiece: View {
-    let color: Color
+    let Color: Color
     var shape: ConfettiShape = .circle
     var position: CGPoint = .zero
     var angle: Double = 0
@@ -5598,11 +5369,11 @@ struct ConfettiPiece: View {
         Group {
             switch shape {
             case .circle:
-                Circle().fill(color)
+                Circle().fill(Color)
             case .triangle:
-                Triangle().fill(color)
+                Triangle().fill(Color)
             case .rectangle:
-                Rectangle().fill(color)
+                Rectangle().fill(Color)
             }
         }
         .frame(width: 8, height: 8)
@@ -5623,42 +5394,6 @@ struct Triangle: Shape {
     }
 }
 
-struct MagicButton: View {
-    let title: String
-    let icon: String
-    let action: () -> Void
-    let color: Color
-
-    @State private var isPressed = false
-
-    var body: some View {
-        Button(action: {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.4)) {
-                isPressed = true
-                action()
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                isPressed = false
-            }
-        }) {
-            HStack {
-                Image(systemName: icon)
-                Text(title)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .background(color.opacity(isPressed ? 0.7 : 1))
-            .foregroundColor(.white)
-            .font(.headline)
-            .cornerRadius(20)
-            .scaleEffect(isPressed ? 0.95 : 1)
-            .shadow(color: color.opacity(0.3), radius: 8, x: 0, y: 4)
-        }
-    }
-}
-
-
-// MARK: - AnimatedCharacterBubble.swift
 
 struct AnimatedCharacterBubble: View {
     let emoji: String
@@ -5690,8 +5425,6 @@ struct AnimatedCharacterBubble: View {
 }
 
 
-// MARK: - FocusCardView.swift
-
 struct FocusCardView: View {
     let letter: String
     let score: Double?
@@ -5721,31 +5454,6 @@ struct FocusCardView: View {
     }
 }
 
-
-// MARK: - StreakBannerView.swift
-
-struct StreakBannerView: View {
-    let streakCount: Int
-
-    var body: some View {
-        if streakCount > 0 {
-            HStack {
-                Image(systemName: "flame.fill")
-                    .foregroundColor(.orange)
-                Text("🔥 \(streakCount)-day streak!")
-                    .font(.subheadline.bold())
-                    .foregroundColor(.orange)
-            }
-            .padding(8)
-            .background(Color.orange.opacity(0.1))
-            .cornerRadius(12)
-            .padding(.horizontal)
-        }
-    }
-}
-
-// MARK: - ConfettiEmitter.swift
-
 struct ConfettiEmitter: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
@@ -5765,7 +5473,7 @@ struct ConfettiEmitter: UIViewRepresentable {
         cell.spinRange = 2
         cell.scale = 0.3
         cell.scaleRange = 0.2
-        cell.color = UIColor.systemPink.cgColor
+        cell.Color = UIColor.systemPink.cgColor
         cell.contents = UIImage(systemName: "star.fill")?.withTintColor(.systemPink, renderingMode: .alwaysOriginal).cgImage
 
         emitter.emitterCells = [cell]
@@ -5781,7 +5489,6 @@ struct ConfettiEmitter: UIViewRepresentable {
     func updateUIView(_ uiView: UIView, context: Context) {}
 }
 
-// MARK: - Enhanced Celebration View
 struct EnhancedCelebrationView: View {
     let message: String
     let score: Double
@@ -5937,11 +5644,11 @@ struct EnhancedCelebrationView: View {
         }
     }
     
-    // Function to determine rewards based on score
+    // rewards determined based on certain scores
     private func getEarnedRewards(for score: Double) -> [String] {
         var rewards: [String] = []
         
-        // Basic reward for completion
+        // basic reward for completion
         rewards.append("⭐️")
         
         // Additional rewards based on score tiers
@@ -5957,7 +5664,7 @@ struct EnhancedCelebrationView: View {
             rewards.append("🌟")
         }
         
-        // Sometimes add random extra reward
+        //  random extra reward for fun
         if Bool.random() && score >= 85 {
             let extraRewards = ["🎯", "🖌️", "✏️", "🎊"]
             if let extra = extraRewards.randomElement() {
@@ -5969,45 +5676,13 @@ struct EnhancedCelebrationView: View {
     }
 }
 
-// Helper for form fields
-struct FormField: View {
-    var icon: String
-    var title: String
-    var isSecure: Bool = false
-    @Binding var value: String
-    
-    var body: some View {
-        HStack {
-            Image(systemName: icon)
-                .foregroundColor(AppTheme.primaryColor)
-                .font(.system(size: 20))
-                .frame(width: 40)
-            
-            Text(title)
-                .font(AppTheme.roundedFont(size: 16, weight: .medium))
-                .foregroundColor(.secondary)
-                .frame(width: 150, alignment: .leading)
-            
-            if isSecure {
-                SecureField("", text: $value)
-                    .font(AppTheme.roundedFont(size: 16))
-            } else {
-                TextField("", text: $value)
-                    .font(AppTheme.roundedFont(size: 16))
-            }
-        }
-        .padding()
-        .background(Color.white)
-        .cornerRadius(15)
-        .shadow(color: Color.black.opacity(0.1), radius: 5)
-    }
-}
-// Helper toggle button with icon
+
+// helper toggle button with icon
 struct HelpToggleButton: View {
     var iconName: String
     var title: String
     @Binding var isOn: Bool
-    var color: Color
+    var Color: Color
     var disabled: Bool = false
     
     var body: some View {
@@ -6020,20 +5695,20 @@ struct HelpToggleButton: View {
             VStack(spacing: 5) {
                 Image(systemName: iconName)
                     .font(.system(size: 22))
-                    .foregroundColor(isOn ? color : .gray)
+                    .foregroundColor(isOn ? Color : .gray)
                 
                 Text(title)
                     .font(AppTheme.roundedFont(size: 12))
-                    .foregroundColor(isOn ? color : .gray)
+                    .foregroundColor(isOn ? Color : .gray)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(isOn ? color.opacity(0.1) : Color.gray.opacity(0.05))
+                    .fill(isOn ? Color.opacity(0.1) : Color.gray.opacity(0.05))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(isOn ? color : Color.gray.opacity(0.3), lineWidth: 1)
+                            .stroke(isOn ? Color : Color.gray.opacity(0.3), lineWidth: 1)
                     )
             )
             .opacity(disabled ? 0.5 : 1.0)
@@ -6042,11 +5717,11 @@ struct HelpToggleButton: View {
     }
 }
 
-// Action button component
+// action button
 struct ActionButton: View {
     var title: String
     var icon: String
-    var color: Color
+    var Color: Color
     var action: () -> Void
     var disabled: Bool = false
     
@@ -6069,19 +5744,19 @@ struct ActionButton: View {
             .padding(.vertical, 12)
             .background(
                 RoundedRectangle(cornerRadius: 20)
-                    .fill(disabled ? Color.gray.opacity(0.3) : color)
-                    .shadow(color: disabled ? Color.clear : color.opacity(0.5), radius: 5, x: 0, y: 2)
+                    .fill(disabled ? Color.gray.opacity(0.3) : Color)
+                    .shadow(color: disabled ? Color.clear : Color.opacity(0.5), radius: 5, x: 0, y: 2)
             )
         }
         .disabled(disabled)
     }
 }
 
-// 5. Pulsing Button for Better Discoverability
+// pulsing button so its easier to see + more fun
 struct PulsingButton: View {
     let icon: String
     let title: String
-    let color: Color
+    let Color: Color
     let action: () -> Void
     @State private var pulsate = false
     
@@ -6103,11 +5778,11 @@ struct PulsingButton: View {
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: 20)
-                        .fill(color)
+                        .fill(Color)
                     
                     // Pulsing overlay
                     RoundedRectangle(cornerRadius: 20)
-                        .stroke(color, lineWidth: 3)
+                        .stroke(Color, lineWidth: 3)
                         .scaleEffect(pulsate ? 1.2 : 1)
                         .opacity(pulsate ? 0 : 0.4)
                 }
@@ -6121,7 +5796,6 @@ struct PulsingButton: View {
     }
 }
 
-// Instruction item component
 struct InstructionItem: View {
     var icon: String
     var title: String
@@ -6149,10 +5823,6 @@ struct InstructionItem: View {
     }
 }
 
-
-
-
-// MARK: - Letter Progress Indicator
 struct LetterProgressIndicator: View {
     var currentIndex: Int
     var totalCount: Int
@@ -6177,7 +5847,7 @@ struct LetterProgressIndicator: View {
                         .opacity(0.5)
                 )
                 
-            // Progress bar with color coding
+            // Progress bar with Color coding
             HStack(spacing: 2) {
                 ForEach(0..<totalCount, id: \.self) { index in
                     Capsule()
@@ -6196,16 +5866,16 @@ struct LetterProgressIndicator: View {
         .padding(.vertical, 5)
     }
     
-    // Get color based on performance or current position
+    // Colour based on performance ((and or current position))
     private func getColorForLetter(at index: Int) -> Color {
         if index > currentIndex {
             // Future letters are gray
             return Color.gray.opacity(0.3)
         } else if index == currentIndex {
-            // Current letter is primary color
+            // Current letter is what i set primary Color as
             return AppTheme.primaryColor
         } else {
-            // Past letters are colored by performance
+            // past letters Colored by performance
             let letterAtIndex = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ")[index % 26]
             let letterStr = String(letterAtIndex)
             
@@ -6220,7 +5890,7 @@ struct LetterProgressIndicator: View {
     }
 }
 
-// Colorful progress circle for kids
+// Colourful progress circle for kids
 struct ChildFriendlyProgressCircle: View {
     var progress: Double // 0-100
     @State private var animateRotation = false
@@ -6268,227 +5938,6 @@ struct ChildFriendlyProgressCircle: View {
             withAnimation(Animation.linear(duration: 30).repeatForever(autoreverses: false)) {
                 animateRotation = progress > 85
             }
-        }
-    }
-}
-// 7. Animated Progress Bar
-struct AnimatedProgressBar: View {
-    @Binding var progress: Double
-    var color: Color = AppTheme.primaryColor
-    @State private var width: CGFloat = 0
-    
-    var body: some View {
-        ZStack(alignment: .leading) {
-            // Background track
-            Rectangle()
-                .fill(Color.gray.opacity(0.2))
-                .frame(height: 10)
-                .cornerRadius(5)
-            
-            // Progress fill
-            Rectangle()
-                .fill(color)
-                .frame(width: width, height: 10)
-                .cornerRadius(5)
-        }
-        .onChange(of: progress) { _, newValue in
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) {
-                self.width = CGFloat(newValue)
-            }
-        }
-        .onAppear {
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) {
-                self.width = CGFloat(progress)
-            }
-        }
-    }
-}
-
-// 9. Themed Progress Tracker
-struct ThemedProgressTracker: View {
-    let theme: ProgressTheme
-    let value: Double
-    let maxValue: Double
-    @State private var animateStroke = false
-    
-    enum ProgressTheme {
-        case space, forest, ocean, mountain
-    }
-    
-    var body: some View {
-        ZStack {
-            // Theme background
-            themeBackground
-                .frame(height: 120)
-                .clipShape(RoundedRectangle(cornerRadius: 20))
-            
-            // Progress marker
-            ZStack {
-                Path { path in
-                    // Create a path for the progress path
-                    switch theme {
-                    case .space:
-                        drawOrbitalPath(in: &path)
-                    case .forest:
-                        drawHillyPath(in: &path)
-                    case .ocean:
-                        drawWavyPath(in: &path)
-                    case .mountain:
-                        drawMountainPath(in: &path)
-                    }
-                }
-                .stroke(Color.white.opacity(0.5), style: StrokeStyle(lineWidth: 4, dash: [5, 5]))
-                
-                // Progress elements along the path
-                ForEach(0..<Int(maxValue), id: \.self) { i in
-                    let progressPoint = Double(i) / maxValue
-                    let isCompleted = Double(i) < value
-                    
-                    themeIcon(isCompleted: isCompleted)
-                        .position(pointAlongPath(at: progressPoint))
-                        .opacity(animateStroke ? 1 : 0)
-                        .scaleEffect(animateStroke && isCompleted ? 1 : 0.5)
-                        .animation(
-                            Animation.spring().delay(Double(i) * 0.1),
-                            value: animateStroke
-                        )
-                }
-            }
-        }
-        .onAppear {
-            withAnimation {
-                animateStroke = true
-            }
-        }
-    }
-    
-    // Path drawing helpers
-    private func drawOrbitalPath(in path: inout Path) {
-        path.addEllipse(in: CGRect(x: 20, y: 20, width: 280, height: 80))
-    }
-
-    private func drawHillyPath(in path: inout Path) {
-        path.move(to: CGPoint(x: 20, y: 80))
-        for i in 0...10 {
-            path.addCurve(
-                to: CGPoint(x: 40 + CGFloat(i * 30), y: 80),
-                control1: CGPoint(x: 25 + CGFloat(i * 30), y: 60),
-                control2: CGPoint(x: 35 + CGFloat(i * 30), y: 60)
-            )
-        }
-    }
-
-    private func drawWavyPath(in path: inout Path) {
-        path.move(to: CGPoint(x: 20, y: 60))
-        for i in 0...5 {
-            path.addCurve(
-                to: CGPoint(x: 80 + CGFloat(i * 60), y: 60),
-                control1: CGPoint(x: 40 + CGFloat(i * 60), y: 40),
-                control2: CGPoint(x: 60 + CGFloat(i * 60), y: 80)
-            )
-        }
-    }
-
-    private func drawMountainPath(in path: inout Path) {
-        path.move(to: CGPoint(x: 20, y: 90))
-        for i in 0...5 {
-            path.addLine(to: CGPoint(x: 50 + CGFloat(i * 40), y: 50))
-            path.addLine(to: CGPoint(x: 80 + CGFloat(i * 40), y: 90))
-        }
-    }
-    
-    private func pointAlongPath(at percentage: Double) -> CGPoint {
-        switch theme {
-        case .space:
-            // Point along an elliptical path
-            let angle = percentage * 2 * .pi
-            return CGPoint(
-                x: 160 + 140 * cos(angle),
-                y: 60 + 40 * sin(angle)
-            )
-        case .forest:
-            // Point along a hilly path
-            let x = 20 + 300 * percentage
-            let y = 80 - 20 * sin(percentage * 10)
-            return CGPoint(x: x, y: y)
-        case .ocean:
-            // Point along a wavy path
-            let x = 20 + 300 * percentage
-            let y = 60 + 20 * sin(percentage * 12)
-            return CGPoint(x: x, y: y)
-        case .mountain:
-            // Point along a mountain path
-            let segmentIndex = Int(percentage * 5)
-            let segmentPercentage = (percentage * 5) - Double(segmentIndex)
-            
-            if segmentPercentage < 0.5 {
-                // Going up
-                let normalizedPercentage = segmentPercentage * 2
-                return CGPoint(
-                    x: 20 + 40 * Double(segmentIndex) + normalizedPercentage * 30,
-                    y: 90 - normalizedPercentage * 40
-                )
-            } else {
-                // Going down
-                let normalizedPercentage = (segmentPercentage - 0.5) * 2
-                return CGPoint(
-                    x: 50 + 40 * Double(segmentIndex) + normalizedPercentage * 30,
-                    y: 50 + normalizedPercentage * 40
-                )
-            }
-        }
-    }
-    
-    @ViewBuilder
-    private var themeBackground: some View {
-        switch theme {
-        case .space:
-            ZStack {
-                Image(systemName: "star.field")
-                    .font(.system(size: 200))
-                    .foregroundColor(Color.purple.opacity(0.8))
-                    .background(Color.black)
-            }
-        case .forest:
-            LinearGradient(
-                colors: [.green, Color(red: 0.1, green: 0.6, blue: 0.1)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        case .ocean:
-            LinearGradient(
-                colors: [.blue, Color(red: 0, green: 0.5, blue: 0.9)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        case .mountain:
-            LinearGradient(
-                colors: [.gray, .brown],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
-    }
-    
-    @ViewBuilder
-    private func themeIcon(isCompleted: Bool) -> some View {
-        switch theme {
-        case .space:
-            Image(systemName: isCompleted ? "planet.fill" : "planet")
-                .foregroundColor(isCompleted ? .yellow : .gray)
-                .font(.system(size: 20))
-        case .forest:
-            Image(systemName: isCompleted ? "leaf.fill" : "leaf")
-                .foregroundColor(isCompleted ? .green : .gray)
-                .font(.system(size: 20))
-        case .ocean:
-            Image(systemName: isCompleted ? "drop.fill" : "drop")
-                .foregroundColor(isCompleted ? .blue : .gray)
-                .font(.system(size: 20))
-        case .mountain:
-            Image(systemName: isCompleted ? "mountain.2.fill" : "mountain.2")
-                .foregroundColor(isCompleted ? .orange : .gray)
-                .font(.system(size: 20))
         }
     }
 }
@@ -6547,7 +5996,6 @@ struct ProgressHistoryGraph: View {
     }
 }
 
-
 // Helper view for stats
 struct StatView: View {
     let value: String
@@ -6580,7 +6028,7 @@ struct ProgressCircle: View {
             Circle()
                 .trim(from: 0.0, to: CGFloat(min(progress/100, 1.0)))
                 .stroke(style: StrokeStyle(lineWidth: 10, lineCap: .round, lineJoin: .round))
-                .foregroundColor(colorForProgress(progress))
+                .foregroundColor(ColorForProgress(progress))
                 .rotationEffect(Angle(degrees: 270.0))
                 .animation(.linear, value: progress)
             
@@ -6589,65 +6037,13 @@ struct ProgressCircle: View {
         }
     }
     
-    func colorForProgress(_ value: Double) -> Color {
+    func ColorForProgress(_ value: Double) -> Color {
         if value >= 80 { return .green }
         else if value >= 60 { return .orange }
         else { return .red }
     }
 }
-
-// 6. Enhanced Letter Mastery Badge
-struct LetterMasteryBadge: View {
-    let letter: String
-    let score: Double
-    @State private var rotate = false
-    @State private var glowOpacity = 0.0
-    @EnvironmentObject var authManager: AuthManager
-    
-    var body: some View {
-        ZStack {
-            // Outer glow
-            Circle()
-                .fill(AppTheme.successColor)
-                .blur(radius: 10)
-                .frame(width: 100, height: 100)
-                .opacity(glowOpacity)
-            
-            // Star background
-            Image(systemName: "star.fill")
-                .font(.system(size: 100))
-                .foregroundColor(AppTheme.successColor)
-                .rotationEffect(.degrees(rotate ? 30 : 0))
-            
-            // Letter
-            Text(letter)
-                .font(.system(size: 40, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
-            
-            
-            
-            // Score badge
-            ZStack {
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 40, height: 40)
-                    .shadow(color: Color.black.opacity(0.1), radius: 2)
-                
-                Text("\(Int(score))%")
-                    .font(AppTheme.roundedFont(size: 12, weight: .bold))
-                    .foregroundColor(AppTheme.successColor)
-            }
-            .offset(x: 40, y: 40)
-        }
-        .onAppear {
-            withAnimation(Animation.easeInOut(duration: 3).repeatForever(autoreverses: true)) {
-                rotate = true
-                glowOpacity = 0.7
-            }
-        }
-    }
-}
-
+// view upon login
 struct LoginView: View {
     @EnvironmentObject var authManager: AuthManager
     @State private var username = ""
@@ -6656,9 +6052,11 @@ struct LoginView: View {
     @State private var loginError = false
     @State private var isAnimating = false
 
+    // displays all the different characters in rotating cycle
     let characters = ["🦊", "🐼", "🐰", "🐶", "🐱"]
     @State private var selectedCharacter = 0
 
+    //allows different choices that are finally defined below
     enum ThemeOption: String, CaseIterable {
         case space = "Space"
         case forest = "Forest"
@@ -6847,7 +6245,9 @@ struct LoginView: View {
                             Text("Demo Accounts:")
                                 .font(AppTheme.roundedFont(size: 14, weight: .semibold))
                                 .foregroundColor(AppTheme.adaptiveSecondaryTextColor(preferences: preferences))
-
+                            
+// default logins displayed so i dont forget
+                            // remove for demo???
                             Text("🧒 Student: username 'yasming', password 'password'")
                             Text("👩‍🏫 Teacher: username 'teacher', password 'password'")
                         }
@@ -6867,7 +6267,7 @@ struct LoginView: View {
                             .background(
                                 RoundedRectangle(cornerRadius: 25)
                                     .fill(AppTheme.adaptivePrimaryColor(preferences: preferences))
-                                    .shadow(color: AppTheme.adaptivePrimaryColor(preferences: preferences).opacity(0.5), radius: 5)
+                                    .shadow(Color: AppTheme.adaptivePrimaryColor(preferences: preferences).opacity(0.5), radius: 5)
                             )
                         }
                         .padding(.top, 10)
@@ -6907,7 +6307,6 @@ struct LoginView: View {
     }
 }
 
-// MARK: - Enhanced Tracing Canvas View
 struct EnhancedTracingCanvasView: View {
     let letter: String
     @Binding var userDrawnPath: Path
@@ -6924,7 +6323,7 @@ struct EnhancedTracingCanvasView: View {
     
     var body: some View {
         ZStack {
-            // Background - dotted paper effect with subtle animation
+            //  dotted paper effect with subtle animation 4 background
             VStack(spacing: 15) {
                 ForEach(0..<20, id: \.self) { _ in
                     HStack(spacing: 15) {
@@ -6992,7 +6391,7 @@ struct EnhancedTracingCanvasView: View {
             // Current drawing path - actively drawing
             userDrawnPath
                 .stroke(AppTheme.successColor, lineWidth: 6)
-                .shadow(color: AppTheme.successColor.opacity(0.5), radius: 2)
+                .shadow(Color: AppTheme.successColor.opacity(0.5), radius: 2)
             
             // Guides
             if showNumberedGuide && !isTrySampleMode {
@@ -7007,11 +6406,12 @@ struct EnhancedTracingCanvasView: View {
             }
             
             if showArrows && !isTrySampleMode {
-                EnhancedDirectionalArrowsView(letter: letter)
+                DirectionalArrowsView(letter: letter, style: .enhanced)
                     .opacity(guideOpacity)
             }
             
-            // Add animated hand icon for the first guide point when starting
+            //  animated hand icon for the first guide point when starting
+            // small n subtle but useful for some
             if showNumberedGuide && !isTrySampleMode && userDrawnSegments.isEmpty && userDrawnPath.isEmpty {
                 GeometryReader { geometry in
                     let guidePoints = LetterPathFactory.letterPathDefinition(for: letter).guidePoints(geometry.size)
@@ -7035,8 +6435,6 @@ struct EnhancedTracingCanvasView: View {
     }
 }
                     
-                    
-// MARK: - Enhanced Controls View
 struct EnhancedControlsView: View {
     @Binding var currentLetterIndex: Int
     let letters: [String]
@@ -7059,7 +6457,7 @@ struct EnhancedControlsView: View {
                         iconName: "figure.walk",
                         title: "Show Path",
                         isOn: $showPath,
-                        color: AppTheme.primaryColor,
+                        Color: AppTheme.primaryColor,
                         disabled: isTrySampleMode
                     )
                     
@@ -7067,7 +6465,7 @@ struct EnhancedControlsView: View {
                         iconName: "hand.point.up.fill",
                         title: "Show Numbers",
                         isOn: $showNumberedGuide,
-                        color: AppTheme.primaryColor,
+                        Color: AppTheme.primaryColor,
                         disabled: isTrySampleMode
                     )
                     
@@ -7075,7 +6473,7 @@ struct EnhancedControlsView: View {
                         iconName: "arrow.up.forward",
                         title: "Show Arrows",
                         isOn: $showArrows,
-                        color: AppTheme.primaryColor,
+                        Color: AppTheme.primaryColor,
                         disabled: isTrySampleMode
                     )
                 }
@@ -7115,7 +6513,7 @@ struct EnhancedControlsView: View {
                 ActionButton(
                     title: "Help",
                     icon: "questionmark.circle.fill",
-                    color: AppTheme.primaryColor,
+                    Color: AppTheme.primaryColor,
                     action: onShowHelp
                 )
                 
@@ -7123,7 +6521,7 @@ struct EnhancedControlsView: View {
                 ActionButton(
                     title: "Clear",
                     icon: "trash.fill",
-                    color: Color.red,
+                    Color: Color.red,
                     action: onReset,
                     disabled: isTrySampleMode
                 )
@@ -7132,7 +6530,7 @@ struct EnhancedControlsView: View {
                 ActionButton(
                     title: isTrySampleMode ? "Stop" : "Try",
                     icon: isTrySampleMode ? "stop.fill" : "play.fill",
-                    color: AppTheme.secondaryColor,
+                    Color: AppTheme.secondaryColor,
                     action: onToggleSample
                 )
                 
@@ -7177,7 +6575,6 @@ struct EnhancedControlsView: View {
     }
 }
                     
-// MARK: - Enhanced Feedback View
 struct EnhancedFeedbackView: View {
     let score: Double
     let character: String
@@ -7245,7 +6642,6 @@ struct EnhancedFeedbackView: View {
     }
 }
 
-// MARK: - Help Popup View
 struct HelpPopupView: View {
     let onDismiss: () -> Void
 
@@ -7279,7 +6675,7 @@ struct HelpPopupView: View {
                     }
                 }
 
-                // Instructions
+                // 'Instructions'
                 ScrollView {
                     VStack(alignment: .leading, spacing: 15) {
                         InstructionItem(
@@ -7340,132 +6736,25 @@ struct HelpPopupView: View {
             )
             .shadow(radius: 15)
             .padding(.horizontal, 30)
-            .offset(x: -11) // 👈 Shift the whole popup left
+            .offset(x: -11) // (shift left where it looks better)
         }
     }
 }
 
-
-// 8. Enhanced Practice Complete Screen
-struct PracticeCompleteView: View {
-    let score: Double
-    let lettersPracticed: [String]
-    let characterEmoji: String
-    let onContinue: () -> Void
-    @State private var animationProgress: CGFloat = 0
-    
-    var body: some View {
-        ZStack {
-            // Background
-            Color.black.opacity(0.4)
-                .edgesIgnoringSafeArea(.all)
-            
-            VStack(spacing: 20) {
-                // Celebration header
-                HStack(spacing: 15) {
-                    Text("🎉")
-                        .font(.system(size: 50))
-                    
-                    Text("Great Practice!")
-                        .font(AppTheme.roundedFont(size: 28, weight: .bold))
-                        .foregroundColor(AppTheme.primaryColor)
-                    
-                    Text("🎉")
-                        .font(.system(size: 50))
-                }
-                .opacity(animationProgress > 0.1 ? 1 : 0)
-                .offset(y: animationProgress > 0.1 ? 0 : -30)
-                
-                // Confetti animation
-                PhysicsConfettiView(count: 30)
-                    .frame(height: 100)
-                    .opacity(animationProgress > 0.2 ? 1 : 0)
-                
-                // Stats card
-                VStack(spacing: 15) {
-                    // Character reaction
-                    ExpressiveCharacter(
-                        emoji: characterEmoji,
-                        expression: score >= 80 ? .excited : .happy
-                    )
-                    .opacity(animationProgress > 0.3 ? 1 : 0)
-                    .scaleEffect(animationProgress > 0.3 ? 1 : 0.5)
-                    
-                    // Score display
-                    VStack {
-                        Text("Average Score")
-                            .font(AppTheme.roundedFont(size: 16))
-                            .foregroundColor(.secondary)
-                        
-                        Text("\(Int(score))%")
-                            .font(AppTheme.roundedFont(size: 36, weight: .bold))
-                            .foregroundColor(progressColor(score))
-                    }
-                    .opacity(animationProgress > 0.4 ? 1 : 0)
-                    
-                    // Letters practiced
-                    VStack(spacing: 10) {
-                        Text("Letters Practiced")
-                            .font(AppTheme.roundedFont(size: 16))
-                            .foregroundColor(.secondary)
-                        
-                        HStack(spacing: 8) {
-                            ForEach(lettersPracticed, id: \.self) { letter in
-                                Text(letter)
-                                    .font(AppTheme.roundedFont(size: 20, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .frame(width: 40, height: 40)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 10)
-                                            .fill(AppTheme.primaryColor)
-                                    )
-                            }
-                        }
-                    }
-                    .opacity(animationProgress > 0.5 ? 1 : 0)
-                    .offset(y: animationProgress > 0.5 ? 0 : 20)
-                }
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 20)
-                        .fill(Color.white)
-                        .shadow(radius: 10)
-                )
-                .padding(.horizontal)
-                
-                // Continue button
-                PulsingButton(
-                    icon: "checkmark.circle.fill",
-                    title: "Continue",
-                    color: AppTheme.successColor,
-                    action: onContinue
-                )
-                .opacity(animationProgress > 0.7 ? 1 : 0)
-                .padding(.top, 20)
-            }
-            .padding()
-        }
-        .onAppear {
-            SoundManager.shared.playCelebration()
-            
-            // Sequence the animations
-            withAnimation(Animation.easeOut(duration: 1.2)) {
-                animationProgress = 1.0
-            }
-        }
-    }
-}
-
+// MAIN!!
+// DETERMINES WHICH VIEW
+// IN MAIN APP DEFINITION
+// IMPORTANT
 struct AppStartView: View {
     @EnvironmentObject var authManager: AuthManager
 
     var body: some View {
         if authManager.currentUser?.role == .teacher {
-            // ✅ Show only the teacher dashboard
+            // only show on teacher
             TeacherDashboardView()
                 .environmentObject(authManager)
         } else {
-            // ✅ Show full student interface
+            // shows full student interface
             StudentMainView()
                 .environmentObject(authManager)
         }
@@ -7498,8 +6787,7 @@ struct StudentMainView: View {
     }
 }
 
-// MARK: - Main Tracing App View
-// Full TracingAppView with overlap fixes, logic, and detailed comments
+// Full TracingAppView with my new overlap fixes
 struct TracingAppView: View {
     @EnvironmentObject var authManager: AuthManager
     
@@ -7604,7 +6892,7 @@ struct TracingAppView: View {
         }
     }
 
-    // MARK: - Subviews
+    // the subviews
 
     private var headerSection: some View {
         VStack(spacing: 0) {
@@ -7771,7 +7059,7 @@ struct TracingAppView: View {
             }
         }
     }
-    // Gesture for drawing - this is the fixed version that works correctly
+    // Gesture for drawing
     private var drawingGesture: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .local)
             .onChanged { value in
@@ -7804,10 +7092,10 @@ struct TracingAppView: View {
                     if let user = authManager.currentUser {
                         let currentLetter = letters[currentLetterIndex]
 
-                        // ✅ Rewards
+                        // Rewards
                         awardRewards(for: currentLetter, with: score, to: user.id, authManager: authManager)
 
-                        // ✅ Performance update
+                        // Performance update
                         if user.role == .student {
                             authManager.updateStudentPerformanceWithSQLite(
                                 studentId: user.id,
@@ -7815,7 +7103,7 @@ struct TracingAppView: View {
                                 score: score
                             )
 
-                            // ✅ Set last practiced letter
+                            // Set last practiced letter
                             authManager.currentPerformance?.lastLetterPracticed = currentLetter
                             SQLiteManager.shared.saveStudentPerformance(
                                 id: user.id,
@@ -7917,7 +7205,8 @@ struct TracingAppView: View {
     
     // Award reward function
     private func awardRewards(for letter: String, with score: Double, to studentId: String, authManager: AuthManager) {
-        // Guard to ensure we have the student performance and the correct letter index
+        // recommended by website
+        // ensures student performance and letter index is correct
         guard let studentPerformance = authManager.currentPerformance,
               let letterIndex = studentPerformance.letterPerformances.firstIndex(where: { $0.letter == letter }) else {
             return // Exit the function if either condition is nil
@@ -7931,7 +7220,7 @@ struct TracingAppView: View {
 
         var allRewards: [String] = []
 
-        // Collect all eligible rewards
+        // Collect all rewards
         if previousAttempts == 0 {
             allRewards.append("🎯")
         }
@@ -7970,6 +7259,7 @@ struct TracingAppView: View {
         PerformanceManager.shared.awardRewards(for: letter, with: score, to: studentId)
 
         // Set reward message
+        // Makes seem more encouraging for student
         if score >= 95 {
             rewardMessage = "Wonderful Tracing!"
         } else if score >= 85 {
@@ -7991,7 +7281,6 @@ struct TracingAppView: View {
             // Trigger animation to sync with the overlay appearance
             DispatchQueue.main.asyncAfter(deadline: delay + 0.05) {
                 withAnimation(.easeInOut(duration: 0.5)) {
-                    // no-op body – this just ensures transition is animated
                     _ = showCelebrationOverlay
                 }
             }
@@ -8008,7 +7297,6 @@ struct TracingAppView: View {
         }
     }
     
-    // Accuracy function and helper methods remain the same as in original
     private func averagePoint(from points: [CGPoint]) -> CGPoint {
         guard !points.isEmpty else { return .zero }
         let total = points.reduce(CGPoint.zero) { sum, point in
@@ -8018,7 +7306,6 @@ struct TracingAppView: View {
     }
 
     private func checkDrawingAccuracy() -> Double {
-        // Use the actual displayed path instead of abstract reference points
         let rect = CGRect(x: 0, y: 0, width: 300, height: 400)
         
         // Get the UIBezierPath of the actual path shown on screen
@@ -8026,7 +7313,7 @@ struct TracingAppView: View {
         let visiblePath = letterPathDefinition.path(rect)
         let bezierPath = UIBezierPath(cgPath: visiblePath.cgPath)
         
-        // Create reference points from the visible path
+        // Create refernce points from the visible path
         let pointCount = 150
         var referencePath: [CGPoint] = []
         for i in 0...pointCount {
@@ -8035,10 +7322,9 @@ struct TracingAppView: View {
         }
         
         if referencePath.isEmpty || allUserDrawnPoints.isEmpty {
-            return 70 // Safe fallback score
+            return 70 // safe fallback score
         }
         
-        // Combine all points from all segments
         var combinedUserPoints: [CGPoint] = []
         for pointArray in allUserDrawnPoints {
             combinedUserPoints.append(contentsOf: pointArray)
@@ -8051,11 +7337,11 @@ struct TracingAppView: View {
         // Sample user points for better comparison
         let sampledUserPoints = samplePoints(from: combinedUserPoints, count: min(300, combinedUserPoints.count))
         
-        // Scoring tolerances
+        // Scoring tolerances (less strict)
         let generousTolerance: CGFloat = 40
         let lenientTolerance: CGFloat = 25
 
-        // SCORING APPROACH 1: How well does the user follow the reference path?
+        // 1 : how well does the user follow the reference path?
         var pathFollowedLoosely = 0
         var pathFollowedWell = 0
         for refPoint in referencePath {
@@ -8067,7 +7353,7 @@ struct TracingAppView: View {
         let coverageScore = (Double(pathFollowedLoosely) / Double(referencePath.count)) * 100
         let precisionScore = (Double(pathFollowedWell) / Double(referencePath.count)) * 100
 
-        // SCORING APPROACH 2: How close are user points to the correct path?
+        // 2 : how close are user points to the correct path?
         var userPointsNearPath = 0
         var userPointsPrecise = 0
         for userPoint in sampledUserPoints {
@@ -8079,7 +7365,7 @@ struct TracingAppView: View {
         let accuracyScore = (Double(userPointsNearPath) / Double(sampledUserPoints.count)) * 100
         let precisionUserScore = (Double(userPointsPrecise) / Double(sampledUserPoints.count)) * 100
 
-        // SCORING APPROACH 3: Multistroke penalty (minimal)
+        // 3: multistroke penalty (minimal)
         var strokePenalty = 0.0
         let isMultiStrokeLetter = EnhancedLetterPathFactory.letterNeedsPenLifting(letters[currentLetterIndex])
         if isMultiStrokeLetter, let enhancedDef = EnhancedLetterPathFactory.getEnhancedLetterPath(for: letters[currentLetterIndex]) {
@@ -8090,8 +7376,8 @@ struct TracingAppView: View {
             }
         }
 
-        // BONUS: If user drew the shape correctly but it's just shifted/skewed,
-        // reward a little without penalizing
+        // if shape drawn correctly but skewed
+        // reward a little without penalising
         var skewBonus = 0.0
         if coverageScore > 80 {
             let userCenter = averagePoint(from: sampledUserPoints)
@@ -8130,7 +7416,7 @@ struct TracingAppView: View {
             SoundManager.shared.playSuccess()
         }
 
-        // Save score to SQLite if logged in as a student
+        // Save score to database if logged in as a student
         if let user = authManager.currentUser, user.role == .student {
             authManager.updateStudentPerformanceWithSQLite(
                 studentId: user.id,
@@ -8142,8 +7428,6 @@ struct TracingAppView: View {
         return finalScore
     }
 
-
-    
     // Helper function to find bounding box of a set of points
     private func boundingBox(of points: [CGPoint]) -> CGRect {
         guard !points.isEmpty else { return .zero }
@@ -8163,15 +7447,15 @@ struct TracingAppView: View {
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
     
-    // Helper function to calculate shape similarity
+    // calculates shape similarity
     private func calculateShapeSimilarity(userBounds: CGRect, refBounds: CGRect) -> Double {
-        // Compare aspect ratios
+        // Compare aspect ratios (just in case cases)
         let userAspect = userBounds.width / max(userBounds.height, 1)
         let refAspect = refBounds.width / max(refBounds.height, 1)
         
         let aspectMatch = 1.0 - min(abs(userAspect - refAspect) / max(refAspect, 1), 1.0)
         
-        // Compare centers
+        // compare centers
         let userCenter = CGPoint(x: userBounds.midX, y: userBounds.midY)
         let refCenter = CGPoint(x: refBounds.midX, y: refBounds.midY)
         
@@ -8187,7 +7471,7 @@ struct TracingAppView: View {
         return aspectMatch * 0.4 + positionMatch * 0.3 + sizeMatch * 0.3
     }
     
-    // Helper function to sample points evenly
+    // points sampled EVENLY
     private func samplePoints(from points: [CGPoint], count: Int) -> [CGPoint] {
         guard points.count > 1, count > 1 else { return points }
         var result: [CGPoint] = []
@@ -8241,7 +7525,7 @@ struct UserScoresGrid: View {
                     if let score = userScores[letter] ?? nil {
                         Text(String(format: "%.1f", score))
                             .font(.system(size: 18, weight: .medium))
-                            .foregroundColor(colorForScore(score))
+                            .foregroundColor(ColorForScore(score))
                     } else {
                         Text("Not practiced")
                             .font(.system(size: 12))
@@ -8259,7 +7543,7 @@ struct UserScoresGrid: View {
         }
     }
     
-    private func colorForScore(_ score: Double) -> Color {
+    private func ColorForScore(_ score: Double) -> Color {
         if score >= 80 { return .green }
         else if score >= 60 { return .orange }
         else { return .red }
@@ -8290,7 +7574,7 @@ struct UserScoresSummary: View {
                     if practicedCount > 0 {
                         Text("Average score: \(String(format: "%.1f", averageScore))%")
                             .font(.subheadline)
-                            .foregroundColor(colorForScore(averageScore))
+                            .foregroundColor(ColorForScore(averageScore))
                     }
                 }
                 
@@ -8307,7 +7591,7 @@ struct UserScoresSummary: View {
                         Circle()
                             .trim(from: 0.0, to: CGFloat(min(averageScore/100, 1.0)))
                             .stroke(style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
-                            .foregroundColor(colorForScore(averageScore))
+                            .foregroundColor(ColorForScore(averageScore))
                             .rotationEffect(Angle(degrees: 270.0))
                         
                         Text("\(Int(averageScore))%")
@@ -8341,21 +7625,21 @@ struct UserScoresSummary: View {
             return Color.gray.opacity(0.3)
         }
         
-        return colorForScore(score)
+        return ColorForScore(score)
     }
     
-    private func colorForScore(_ score: Double) -> Color {
+    private func ColorForScore(_ score: Double) -> Color {
         if score >= 80 { return .green }
         else if score >= 60 { return .orange }
         else { return .red }
     }
 }
 
-// Updated EnhancedHeaderView to include settings button
+// includes settings button
 struct EnhancedHeaderView: View {
     @EnvironmentObject var authManager: AuthManager
     var character: String {
-        return authManager.currentUser?.preferences.characterEmoji ?? "🦊"
+        return authManager.currentUser?.preferences.characterEmoji ?? "🦊" // (fox always base case)
     }
     let onLogout: () -> Void
     var onShowSettings: () -> Void
@@ -8420,334 +7704,8 @@ struct EnhancedHeaderView: View {
         .frame(height: 70)
     }
 }
-// MARK: Subviews
 
-struct SearchBar: View {
-    @Binding var text: String
-    
-    var body: some View {
-        HStack {
-            TextField("Search students...", text: $text)
-                .padding(8)
-                .padding(.horizontal, 25)
-                .background(Color(.systemGray6))
-                .cornerRadius(8)
-                .overlay(
-                    HStack {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundColor(.gray)
-                            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                            .padding(.leading, 8)
-                        
-                        if !text.isEmpty {
-                            Button(action: {
-                                text = ""
-                            }) {
-                                Image(systemName: "multiply.circle.fill")
-                                    .foregroundColor(.gray)
-                                    .padding(.trailing, 8)
-                            }
-                        }
-                    }
-                )
-        }
-        .padding(.horizontal, 10)
-    }
-}
-
-// MARK: - Practice Options with Child-friendly Design
-struct EnhancedPracticeOptions: View {
-    let onFreePractice: () -> Void
-    let onFocusPractice: () -> Void
-    @State private var hoverFree = false
-    @State private var hoverFocus = false
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("Let's Practice!")
-                .font(AppTheme.roundedFont(size: 22, weight: .bold))
-                .foregroundColor(AppTheme.primaryColor)
-            
-            HStack(spacing: 15) {
-                // Free practice card
-                Button(action: onFreePractice) {
-                    VStack(spacing: 10) {
-                        ZStack {
-                            Circle()
-                                .fill(AppTheme.primaryColor.opacity(0.2))
-                                .frame(width: 70, height: 70)
-                            
-                            Image(systemName: "abc")
-                                .font(.system(size: 30, weight: .bold))
-                                .foregroundColor(AppTheme.primaryColor)
-                                .scaleEffect(hoverFree ? 1.1 : 1.0)
-                                .animation(.spring(), value: hoverFree)
-                        }
-                        
-                        Text("All Letters")
-                            .font(AppTheme.roundedFont(size: 18, weight: .semibold))
-                            .foregroundColor(AppTheme.primaryColor)
-                        
-                        Text("A-Z Practice")
-                            .font(AppTheme.roundedFont(size: 14))
-                            .foregroundColor(.secondary)
-                            
-                        // Animated arrow
-                        Image(systemName: "arrow.right.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(AppTheme.primaryColor)
-                            .opacity(hoverFree ? 1.0 : 0.0)
-                            .scaleEffect(hoverFree ? 1.0 : 0.5)
-                            .offset(x: hoverFree ? 0 : -10)
-                            .animation(.spring(), value: hoverFree)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
-                    .background(
-                        RoundedRectangle(cornerRadius: 20)
-                            .fill(AppTheme.primaryColor.opacity(hoverFree ? 0.15 : 0.1))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 20)
-                                    .stroke(AppTheme.primaryColor, lineWidth: 2)
-                                    .opacity(0.3)
-                            )
-                    )
-                    .onHover { hovering in
-                        hoverFree = hovering
-                    }
-                    .onTapGesture {
-                        SoundManager.shared.playClick()
-                        onFreePractice()
-                    }
-                }
-                
-                // Focus practice card
-                Button(action: onFocusPractice) {
-                    VStack(spacing: 10) {
-                        ZStack {
-                            Circle()
-                                .fill(AppTheme.secondaryColor.opacity(0.2))
-                                .frame(width: 70, height: 70)
-                            
-                            Image(systemName: "star.fill")
-                                .font(.system(size: 30, weight: .bold))
-                                .foregroundColor(AppTheme.secondaryColor)
-                                .scaleEffect(hoverFocus ? 1.1 : 1.0)
-                                .rotationEffect(Angle.degrees(hoverFocus ? 10 : 0))
-                                .animation(.spring(), value: hoverFocus)
-                        }
-                        
-                        Text("Focus Mode")
-                            .font(AppTheme.roundedFont(size: 18, weight: .semibold))
-                            .foregroundColor(AppTheme.secondaryColor)
-                        
-                        Text("Practice Difficult Letters")
-                            .font(AppTheme.roundedFont(size: 14))
-                            .foregroundColor(.secondary)
-                            
-                        // Animated arrow
-                        Image(systemName: "arrow.right.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(AppTheme.secondaryColor)
-                            .opacity(hoverFocus ? 1.0 : 0.0)
-                            .scaleEffect(hoverFocus ? 1.0 : 0.5)
-                            .offset(x: hoverFocus ? 0 : -10)
-                            .animation(.spring(), value: hoverFocus)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
-                    .background(
-                        RoundedRectangle(cornerRadius: 20)
-                            .fill(AppTheme.secondaryColor.opacity(hoverFocus ? 0.15 : 0.1))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 20)
-                                    .stroke(AppTheme.secondaryColor, lineWidth: 2)
-                                    .opacity(0.3)
-                            )
-                    )
-                    .onHover { hovering in
-                        hoverFocus = hovering
-                    }
-                    .onTapGesture {
-                        SoundManager.shared.playClick()
-                        onFocusPractice()
-                    }
-                }
-            }
-        }
-    }
-
-}
-    
-// MARK: - Child-friendly Rewards Section
-struct EnhancedRewardsSection: View {
-    let totalRewards: Int
-    let onShowRewards: () -> Void
-    @State private var animated = false
-    var preferences: UserPreferences?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("My Rewards")
-                .font(.system(size: 22, weight: .bold, design: .rounded))
-                .foregroundColor(AppTheme.adaptiveSecondaryColor(preferences: preferences))
-            
-            HStack {
-                // Trophy animation
-                ZStack {
-                    Circle()
-                        .fill(AppTheme.adaptiveSecondaryColor(preferences: preferences).opacity(0.2))
-                        .frame(width: 70, height: 70)
-                    
-                    Image(systemName: "trophy.fill")
-                        .font(.system(size: 30))
-                        .foregroundColor(AppTheme.adaptiveSecondaryColor(preferences: preferences))
-                        .scaleEffect(animated ? 1.2 : 1.0)
-                        .rotationEffect(Angle.degrees(animated ? 10 : 0))
-                        .animation(Animation.spring(response: 0.5, dampingFraction: 0.6).repeatForever(autoreverses: true), value: animated)
-                        .onAppear {
-                            animated = true
-                        }
-                }
-                
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("You've earned")
-                        .font(.system(size: 16, design: .rounded))
-                        .foregroundColor(AppTheme.adaptiveTextColor(preferences: preferences))
-                    
-                    Text("\(totalRewards) Stickers!")
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
-
-                        .foregroundColor(AppTheme.adaptiveSecondaryColor(preferences: preferences))
-                }
-                
-                Spacer()
-                
-                // Enhanced button
-                Button(action: onShowRewards) {
-                    HStack {
-                        Image(systemName: "star.fill")
-                        Text("View All")
-                            .font(.system(size: 16, weight: .medium, design: .rounded))
-
-                    }
-                    .foregroundColor(.white)
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 14)
-                    .background(AppTheme.adaptiveSecondaryColor(preferences: preferences))
-                    .cornerRadius(15)
-                }
-            }
-            
-            // Preview of some stickers with animations
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 15) {
-                    ForEach(Array(AppTheme.rewardStickers.prefix(5).enumerated()), id: \.offset) { index, sticker in
-                        Text(sticker)
-                            .font(.system(size: 30))
-                            .opacity(animated ? 1 : 0)
-                            .offset(y: animated ? 0 : 20)
-                            .animation(Animation.spring().delay(Double(index) * 0.1), value: animated)
-                    }
-                    
-                    if totalRewards > 5 {
-                        Text("+ more!")
-                            .font(.system(size: 14, weight: .regular, design: .rounded))
-
-                            .foregroundColor(.secondary)
-                            .opacity(animated ? 1 : 0)
-                            .animation(Animation.spring().delay(0.6), value: animated)
-                    }
-                }
-                .padding(.top, 10)
-                .padding(.bottom, 5)
-            }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(AppTheme.adaptiveCardBackgroundColor(preferences: preferences))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(AppTheme.adaptiveSecondaryColor(preferences: preferences), lineWidth: 2)
-                        .opacity(0.3)
-                )
-        )
-        .padding(.horizontal)
-    }
-}
-
-
-// Reward tile for a specific letter
-struct RewardLetterTile: View {
-    let letter: String
-    let rewards: [String]
-    @State private var isExpanded = false
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Letter header
-            Button(action: {
-                SoundManager.shared.playClick()
-                withAnimation {
-                    isExpanded.toggle()
-                }
-            }) {
-                HStack {
-                    Text(letter)
-                        .font(AppTheme.roundedFont(size: 30, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(AppTheme.primaryColor)
-                        )
-                    
-                    Text("Rewards")
-                        .font(AppTheme.roundedFont(size: 18, weight: .medium))
-                        .foregroundColor(.primary)
-                    
-                    Spacer()
-                    
-                    Text("\(rewards.count)")
-                        .font(AppTheme.roundedFont(size: 18, weight: .bold))
-                        .foregroundColor(AppTheme.secondaryColor)
-                    
-                    Image(systemName: isExpanded ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
-                        .foregroundColor(AppTheme.primaryColor)
-                        .font(.system(size: 24))
-                }
-            }
-            
-            // Rewards grid
-            if isExpanded {
-                LazyVGrid(columns: [
-                    GridItem(.adaptive(minimum: 60))
-                ], spacing: 15) {
-                    ForEach(rewards, id: \.self) { reward in
-                        Text(reward)
-                            .font(.system(size: 40))
-                            .frame(width: 60, height: 60)
-                            .background(
-                                RoundedRectangle(cornerRadius: 15)
-                                    .fill(Color.white)
-                                    .shadow(color: Color.black.opacity(0.1), radius: 3)
-                            )
-                    }
-                }
-                .padding(.top, 5)
-                .transition(.opacity)
-            }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(Color.white)
-                .shadow(radius: 5)
-        )
-    }
-}
-// Letter progress tile with child-friendly indicators
+// Letter progress tile (more childfriendly vers)
 struct LetterProgressTile: View {
     let performance: LetterPerformance
     
@@ -8808,7 +7766,7 @@ struct LetterProgressTile: View {
     }
 }
 
-// Detailed view for letter performance
+// detailed view for letter performance
 struct LetterDetailView: View {
     let performance: LetterPerformance
     
@@ -8899,159 +7857,7 @@ struct LetterDetailView: View {
         )
     }
 }
-        
-// MARK: - Rewards Collection View
-struct RewardsCollectionView: View {
-    let performance: StudentPerformance
-    @Environment(\.presentationMode) var presentationMode
-    @State private var selectedCategory: RewardCategory = .all
-    @State private var animateItems = false
-    
-    enum RewardCategory: String, CaseIterable {
-        case all = "All"
-        case mastered = "Mastered"
-        case recent = "Recent"
-        case alphabet = "A-Z"
-    }
-    
-    var earnedRewards: [String: [String]] {
-        var result: [String: [String]] = [:]
-        
-        for letterPerf in performance.letterPerformances {
-            if !letterPerf.rewards.isEmpty {
-                result[letterPerf.letter] = letterPerf.rewards
-            }
-        }
-        
-        return result
-    }
-    
-    var filteredRewards: [String: [String]] {
-        switch selectedCategory {
-        case .all:
-            return earnedRewards
-        case .mastered:
-            return earnedRewards.filter { key, _ in
-                if let letterPerf = performance.letterPerformances.first(where: { $0.letter == key }) {
-                    return letterPerf.isMastered
-                }
-                return false
-            }
-        case .recent:
-            // Get letters practiced in the last week
-            let oneWeekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-            return earnedRewards.filter { key, _ in
-                if let letterPerf = performance.letterPerformances.first(where: { $0.letter == key }) {
-                    return letterPerf.lastPracticed > oneWeekAgo
-                }
-                return false
-            }
-        case .alphabet:
-            return earnedRewards
-        }
-    }
-    
-    var body: some View {
-        NavigationView {
-            ZStack {
-                // Background
-                AppTheme.backgroundColor
-                    .edgesIgnoringSafeArea(.all)
-                
-                VStack(spacing: 20) {
-                    // Header with reward stats
-                    VStack(spacing: 5) {
-                        Text("My Reward Collection")
-                            .font(AppTheme.roundedFont(size: 28, weight: .bold))
-                            .foregroundColor(AppTheme.secondaryColor)
-                            .multilineTextAlignment(.center)
-                        
-                        Text("You've earned \(performance.totalRewards) stickers!")
-                            .font(AppTheme.roundedFont(size: 18))
-                            .foregroundColor(.primary.opacity(0.7))
-                    }
-                    .padding(.top, 10)
-                    
-                    // Category selector
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(RewardCategory.allCases, id: \.self) { category in
-                                CategoryButton(
-                                    title: category.rawValue,
-                                    isSelected: selectedCategory == category,
-                                    onTap: {
-                                        withAnimation {
-                                            SoundManager.shared.playClick()
-                                            selectedCategory = category
-                                            
-                                            // Reset animation to replay when changing category
-                                            animateItems = false
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                                withAnimation {
-                                                    animateItems = true
-                                                }
-                                            }
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                        .padding(.horizontal)
-                    }
-                    
-                    if selectedCategory == .alphabet {
-                        // A-Z grid view
-                        AlphabetRewardsGrid(earnedRewards: earnedRewards, animate: animateItems)
-                    } else if !filteredRewards.isEmpty {
-                        // Scrollable cards
-                        ScrollView {
-                            VStack(spacing: 15) {
-                                ForEach(Array(filteredRewards.keys.sorted()), id: \.self) { letter in
-                                    if let rewards = filteredRewards[letter] {
-                                        EnhancedRewardCard(letter: letter, rewards: rewards, animate: animateItems)
-                                    }
-                                }
-                            }
-                            .padding(.horizontal)
-                            .padding(.bottom, 20)
-                        }
-                    } else {
-                        // Empty state
-                        VStack(spacing: 20) {
-                            Image(systemName: "star.circle")
-                                .font(.system(size: 60))
-                                .foregroundColor(AppTheme.secondaryColor.opacity(0.5))
-                            
-                            Text("No rewards in this category yet")
-                                .font(AppTheme.roundedFont(size: 18))
-                                .foregroundColor(.secondary)
-                            
-                            Text("Keep practicing to earn more rewards!")
-                                .font(AppTheme.roundedFont(size: 16))
-                                .foregroundColor(.secondary.opacity(0.8))
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal)
-                        }
-                        .frame(maxHeight: .infinity)
-                    }
-                }
-                .onAppear {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        withAnimation {
-                            animateItems = true
-                        }
-                    }
-                }
-            }
-            .navigationBarItems(trailing: Button("Done") {
-                SoundManager.shared.playClick()
-                presentationMode.wrappedValue.dismiss()
-            })
-            .navigationBarTitle("", displayMode: .inline)
-        }
-    }
-}
-    
+
 struct WrapRewardsView: View {
     let rewards: [String]
 
@@ -9097,7 +7903,6 @@ struct RewardsDashboardView: View {
     }
 }
 
-// MARK: - Category Button
 struct CategoryButton: View {
     let title: String
     let isSelected: Bool
@@ -9118,7 +7923,6 @@ struct CategoryButton: View {
     }
 }
 
-// MARK: - Enhanced Reward Card
 struct EnhancedRewardCard: View {
     let letter: String
     let rewards: [String]
@@ -9345,244 +8149,7 @@ struct EmptyLetterTile: View {
         }
     }
 }
-        
-// MARK: - Child-friendly Progress Grid
-struct ChildFriendlyProgressGrid: View {
-    let performances: [LetterPerformance]
-    @State private var showLetterInfo: String? = nil
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("My Progress Map")
-                .font(AppTheme.roundedFont(size: 22, weight: .bold))
-                .foregroundColor(AppTheme.primaryColor)
-            
-            // Letter grid with fun visuals
-            LazyVGrid(columns: [
-                GridItem(.adaptive(minimum: 65, maximum: 80))
-            ], spacing: 10) {
-                ForEach(performances.sorted { $0.letter < $1.letter }) { perf in
-                    Button(action: {
-                        SoundManager.shared.playClick()
-                        withAnimation {
-                            showLetterInfo = showLetterInfo == perf.letter ? nil : perf.letter
-                        }
-                    }) {
-                        LetterProgressTile(performance: perf)
-                    }
-                }
-            }
-            
-            // Detailed info for selected letter
-            if let selectedLetter = showLetterInfo,
-               let letterPerf = performances.first(where: { $0.letter == selectedLetter }) {
-                LetterDetailView(performance: letterPerf)
-                    .transition(.scale.combined(with: .opacity))
-                    .animation(.spring(), value: showLetterInfo)
-            }
-        }
-    }
-}
-    
-        
-// MARK: - Child-friendly Improvement Section
-struct ChildFriendlyImprovementSection: View {
-    let letters: [LetterPerformance]
-    let character: String
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {  // Increased spacing for clarity
-            HStack {
-                Text("Let's Practice These")
-                    .font(AppTheme.roundedFont(size: 22, weight: .bold))
-                    .foregroundColor(AppTheme.primaryColor)
-                
-                Spacer()
-                
-                // Helper character with larger size
-                Text(character)
-                    .font(.system(size: 40))  // Increased size for visibility
-            }
-            
-            // Letters to practice section with improved layout
-            ForEach(letters) { letter in
-                HStack {
-                    // Letter tile with better emphasis
-                    Text(letter.letter)
-                        .font(AppTheme.roundedFont(size: 30, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(width: 55, height: 55)  // Slightly larger tile
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(AppTheme.primaryColor)
-                        )
-                    
-                    VStack(alignment: .leading, spacing: 8) {  // Adjusted spacing
-                        // Progress bar with clearer visualization
-                        HStack(spacing: 0) {
-                            ForEach(0..<10) { i in
-                                RoundedRectangle(cornerRadius: 2)
-                                    .fill(Double(i) * 10 <= letter.averageScore ?
-                                          progressColor(letter.averageScore) : Color.gray.opacity(0.3))
-                                    .frame(height: 12)  // Slightly taller for better visibility
-                                    .frame(maxWidth: .infinity)
-                            }
-                        }
-                        .frame(height: 12)
-                        
-                        // Score text with proper alignment
-                        HStack {
-                            Text("Score: \(Int(letter.averageScore))%")
-                                .font(AppTheme.roundedFont(size: 14, weight: .medium))
-                                .foregroundColor(.primary)
-                            
-                            Spacer()
-                            
-                            Text("Tried \(letter.attempts) times")
-                                .font(AppTheme.roundedFont(size: 12))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 15)
-                        .fill(Color.white)
-                        .shadow(color: Color.black.opacity(0.1), radius: 5)  // Added shadow for better separation
-                )
-            }
-        }
-        .padding()
-    }
-}
 
-// MARK: - Child-friendly Mastered Letters Section
-struct EnhancedMasteredSection: View {
-    let letters: [LetterPerformance]
-    @State private var currentIndex = 0
-    @State private var timerRunning = false
-    let timer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
-    
-    var visibleLetters: [LetterPerformance] {
-        if letters.count <= 4 {
-            return letters
-        } else {
-            let startIndex = currentIndex % letters.count
-            let endIndex = min(startIndex + 4, letters.count)
-            return Array(letters[startIndex..<endIndex])
-        }
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            HStack {
-                Text("Mastered Letters")
-                    .font(AppTheme.roundedFont(size: 22, weight: .bold))
-                    .foregroundColor(AppTheme.successColor)
-                
-                Spacer()
-                
-                if letters.count > 4 {
-                    Button(action: {
-                        SoundManager.shared.playClick()
-                        withAnimation {
-                            currentIndex = (currentIndex + 4) % letters.count
-                        }
-                    }) {
-                        Text("See More")
-                            .font(AppTheme.roundedFont(size: 14, weight: .medium))
-                            .foregroundColor(AppTheme.successColor)
-                        
-                        Image(systemName: "chevron.right.circle.fill")
-                            .foregroundColor(AppTheme.successColor)
-                    }
-                }
-            }
-            
-            // Mastered letters display with better animation and spacing
-            HStack(spacing: 16) {  // Increased spacing for clarity
-                ForEach(visibleLetters) { letter in
-                    LetterMasteryBadge(
-                        letter: letter.letter,
-                        score: letter.averageScore
-                    )
-                    .frame(height: 120)
-                    .transition(.asymmetric(
-                        insertion: .scale.combined(with: .opacity),
-                        removal: .opacity
-                    ))
-                }
-                
-                if letters.isEmpty {
-                    Text("Keep practicing to master letters!")
-                        .font(AppTheme.roundedFont(size: 18))
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .multilineTextAlignment(.center)
-                }
-            }
-            .frame(height: 120)
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(AppTheme.successColor.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(AppTheme.successColor, lineWidth: 2)
-                        .opacity(0.3)
-                )
-        )
-        .onReceive(timer) { _ in
-            if letters.count > 4 && timerRunning {
-                withAnimation {
-                    currentIndex = (currentIndex + 4) % letters.count
-                }
-            }
-        }
-        .onAppear {
-            timerRunning = letters.count > 4
-        }
-        .onDisappear {
-            timerRunning = false
-        }
-    }
-}
-
-// MARK: - Student Row View
-struct StudentRowView: View {
-    @EnvironmentObject var authManager: AuthManager
-    let student: User
-    
-    private var performance: StudentPerformance? {
-        authManager.currentPerformance
-    }
-    
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading) {
-                Text(student.fullName.isEmpty ? student.username : student.fullName)
-                    .font(.headline)
-                
-                if !student.fullName.isEmpty {
-                    Text("@\(student.username)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            
-            Spacer()
-            
-            if let performance {
-                ProgressCircle(progress: performance.overallAverage)
-                    .frame(width: 40, height: 40)
-            }
-        }
-        .padding(.vertical, 8)
-    }
-}
-
-// MARK: - Letter Performance Cell
 struct LetterPerformanceCell: View {
     let performance: LetterPerformance
     
@@ -9595,7 +8162,7 @@ struct LetterPerformanceCell: View {
             if performance.attempts > 0 {
                 Text("\(Int(performance.averageScore))%")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(colorForScore(performance.averageScore))
+                    .foregroundColor(ColorForScore(performance.averageScore))
                 
                 Text("\(performance.attempts) tries")
                     .font(.system(size: 11))
@@ -9617,122 +8184,10 @@ struct LetterPerformanceCell: View {
         )
     }
     
-    func colorForScore(_ score: Double) -> Color {
+    func ColorForScore(_ score: Double) -> Color {
         if score >= 80 { return .green }
         else if score >= 60 { return .orange }
         else { return .red }
-    }
-}
-
-struct EnhancedProfileHeader: View {
-    let performance: StudentPerformance?
-    let character: String
-    @State private var showAnimation = false
-
-    var body: some View {
-        ZStack {
-            // Background gradient with rounded corners
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    AppTheme.backgroundColor,
-                    AppTheme.primaryColor.opacity(0.2)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .cornerRadius(25)
-            .shadow(radius: 10) // Added shadow for depth
-
-            HStack(spacing: 20) {
-                // Animated character with slight scaling effect
-                ExpressiveCharacter(
-                    emoji: character,
-                    expression: getCharacterExpression()
-                )
-                .scaleEffect(showAnimation ? 1.0 : 0.85)
-                .animation(.easeIn(duration: 0.6), value: showAnimation)
-                
-                VStack(alignment: .leading, spacing: 10) {  // Increased spacing for readability
-                    // Welcome text with dynamic user name
-                    if let user = performance {
-                        Text("Hello, \(user.studentName)!")
-                            .font(AppTheme.roundedFont(size: 24, weight: .bold))
-                            .foregroundColor(AppTheme.primaryColor)
-                        
-                        // Streak info with animation on appearance
-                        if user.consecutiveDayStreak > 0 {
-                            HStack {
-                                Image(systemName: "flame.fill")
-                                    .foregroundColor(AppTheme.secondaryColor)
-                                    .opacity(showAnimation ? 1 : 0)
-                                    .offset(x: showAnimation ? 0 : -10)
-                                
-                                Text("\(user.consecutiveDayStreak) day streak!")
-                                    .font(AppTheme.roundedFont(size: 16))
-                                    .foregroundColor(AppTheme.secondaryColor)
-                            }
-                            .transition(.scale)
-                        }
-                        
-                        // Overall progress display with percentage and color-coded
-                        HStack {
-                            Text("Overall Progress:")
-                                .font(AppTheme.roundedFont(size: 16))
-                                .foregroundColor(.secondary)
-                            
-                            Text("\(Int(user.overallAverage))%")
-                                .font(AppTheme.roundedFont(size: 18, weight: .bold))
-                                .foregroundColor(progressColor(user.overallAverage))
-                        }
-                    }
-                }
-                .padding(.vertical, 12)  // Added vertical padding for spacing
-                .frame(maxWidth: .infinity, alignment: .leading) // Ensured the text aligns to the left
-                
-                Spacer()
-
-                // Progress circle with animation
-                if let performance = performance {
-                    ChildFriendlyProgressCircle(progress: performance.overallAverage)
-                        .frame(width: 70, height: 70)
-                        .scaleEffect(showAnimation ? 1.0 : 0.1)
-                        .animation(.easeInOut(duration: 0.6), value: showAnimation)
-                }
-            }
-            .padding()  // General padding for the header
-        }
-        .onAppear {
-            withAnimation(.spring()) {
-                showAnimation = true
-            }
-        }
-    }
-
-    // Get the character's expression based on performance data
-    private func getCharacterExpression() -> ExpressiveCharacter.Expression {
-        guard let performance = performance else { return .neutral }
-
-        if performance.consecutiveDayStreak >= 3 {
-            return .excited
-        } else if performance.overallAverage >= 80 {
-            return .happy
-        } else if performance.masteredLetters.count >= 5 {
-            return .happy
-        } else {
-            return .neutral
-        }
-    }
-
-    // Helper method to determine the color for overall progress percentage
-    private func progressColor(_ progress: Double) -> Color {
-        switch progress {
-        case 0..<50:
-            return .red
-        case 50..<80:
-            return .orange
-        default:
-            return .green
-        }
     }
 }
 
@@ -9741,7 +8196,7 @@ struct ProgressBarSegments: View {
     
     var body: some View {
         ForEach(0..<10, id: \.self) { i in
-            // Simplify the conditional coloring logic
+            // simplifies conditional logic
             let isFilled = Double(i) * 10 <= score
             let fillColor = isFilled ? progressColor(score) : Color.gray.opacity(0.3)
             
@@ -9749,104 +8204,6 @@ struct ProgressBarSegments: View {
                 .fill(fillColor)
                 .frame(height: 10)
                 .frame(maxWidth: .infinity)
-        }
-    }
-}
-
-struct WeakLetterItem: View {
-    let letter: LetterPerformance
-    
-    var body: some View {
-        HStack {
-            // Letter tile
-            Text(letter.letter)
-                .font(AppTheme.roundedFont(size: 30, weight: .bold))
-                .foregroundColor(.white)
-                .frame(width: 50, height: 50)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(AppTheme.primaryColor)
-                )
-            
-            VStack(alignment: .leading, spacing: 5) {
-                // Progress bar with child-friendly visualization
-                HStack(spacing: 0) {
-                    ProgressBarSegments(score: letter.averageScore)
-                }
-                .frame(height: 10)
-                
-                // Score text
-                HStack {
-                    Text("Score: \(Int(letter.averageScore))%")
-                        .font(AppTheme.roundedFont(size: 14, weight: .medium))
-                        .foregroundColor(.primary)
-                    
-                    Spacer()
-                    
-                    Text("Tried \(letter.attempts) times")
-                        .font(AppTheme.roundedFont(size: 12))
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 15)
-                .fill(Color.white)
-                .shadow(color: Color.black.opacity(0.1), radius: 3)
-        )
-    }
-}
-
-// Dark mode aware card style
-struct DarkModeAwareCard<Content: View>: View {
-    let preferences: UserPreferences?
-    let content: Content
-    
-    init(preferences: UserPreferences?, @ViewBuilder content: () -> Content) {
-        self.preferences = preferences
-        self.content = content()
-    }
-    
-    var body: some View {
-        content
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 15)
-                    .fill(AppTheme.adaptiveCardBackgroundColor(preferences: preferences))
-                    .shadow(
-                        color: preferences?.visualPreference == .darkMode ?
-                            Color.black.opacity(0.3) : Color.black.opacity(0.1),
-                        radius: 5
-                    )
-            )
-    }
-}
-
-// Dark mode aware button style
-struct DarkModeAwareButton: View {
-    let title: String
-    let icon: String
-    let preferences: UserPreferences?
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            HStack {
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                
-                Text(title)
-                    .font(.system(size: 16, weight: .medium, design: .rounded))
-
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 20)
-            .foregroundColor(preferences?.visualPreference == .darkMode ? Color.black : Color.white)
-            .background(
-                Capsule()
-                    .fill(AppTheme.adaptivePrimaryColor(preferences: preferences))
-            )
         }
     }
 }
@@ -9990,7 +8347,6 @@ struct AllLettersView: View {
     }
 }
 
-
 enum DashboardScreen {
     case home, allLetters, focusMode, rewards, rewardsDetail, teacher
 }
@@ -10053,7 +8409,7 @@ struct SidebarView: View {
 }
 
 
-// MARK: - Enhanced HomeDashboardView with Celebration, Theme Fixes, Child-Friendly Style
+// w celebration, theme fixes and child friendly style
 struct HomeDashboardView: View {
     @EnvironmentObject var authManager: AuthManager
     @Binding var selectedSidebarItem: SidebarItem
@@ -10077,7 +8433,7 @@ struct HomeDashboardView: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
-                        // MARK: - Header with Character
+                        // header w character
                         HStack(alignment: .top) {
                             Button {
                                 let newEmoji = AppTheme.happyCharacters.randomElement() ?? "🦊"
@@ -10123,7 +8479,7 @@ struct HomeDashboardView: View {
                             }
                         }
 
-                        // MARK: - Recent Practice
+                        // recent practice
                         if let perf = lastLetterPracticed {
                             SectionCard {
                                 VStack(alignment: .leading, spacing: 8) {
@@ -10140,7 +8496,7 @@ struct HomeDashboardView: View {
                             }
                         }
 
-                        // MARK: - Streak Ring
+                        // streak ring (inspired by duolingo)
                         if let streak = streak {
                             SectionCard {
                                 VStack(alignment: .leading, spacing: 12) {
@@ -10174,7 +8530,8 @@ struct HomeDashboardView: View {
                             }
                         }
 
-                        // MARK: - Daily Challenge
+                        // daily challenge
+                        // random 3 letters didplayed to do
                         SectionCard {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text("🎯 Today’s Challenge")
@@ -10205,6 +8562,7 @@ struct HomeDashboardView: View {
                                 .buttonStyle(.borderedProminent)
 
                                 if completed == dailyChallengeLetters.count {
+                                    // only displays celebration if button clicked to view it (reduces there being too much visuals on screen)
                                     Button("🎉 View Congratulations") {
                                         showCelebration = true
                                     }
@@ -10222,12 +8580,13 @@ struct HomeDashboardView: View {
                         .environmentObject(authManager)
                 }
 
-                // MARK: - Celebration Overlay
+                // celebration overlay
                 if showCelebration {
                     ZStack {
                         Color.black.opacity(0.4).ignoresSafeArea()
                         VStack(spacing: 20) {
                             Text(authManager.currentUser?.preferences.characterEmoji ?? "🦊")
+                            // uses character 4 consistent fun
                                 .font(.system(size: 60))
                             Text("Well done on completing the daily challenge, you're absolutely super! 🌟")
                                 .multilineTextAlignment(.center)
@@ -10275,6 +8634,7 @@ struct HomeDashboardView: View {
 
     private var characterQuotes: [String] {
         [
+            // random nice messages 'being said by' characters
             "You're doing amazing!",
             "Keep it up!",
             "Let’s trace something new!",
@@ -10306,56 +8666,6 @@ struct HomeDashboardView: View {
     }
 }
 
-
-struct PracticePageView: View {
-    @Binding var currentLetter: String
-    @State private var selectedLetter: String = "A"
-    @State private var showPath = false
-
-    private let alphabet: [String] = (65...90).compactMap { UnicodeScalar($0).map { String($0) } }
-
-    var body: some View {
-        GeometryReader { geo in
-            VStack(spacing: 10) {
-                Spacer(minLength: geo.safeAreaInsets.top + 20)
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(alphabet, id: \.self) { letter in
-                            Button(action: {
-                                currentLetter = letter
-                                selectedLetter = letter
-                            }) {
-                                Text(letter)
-                                    .font(.system(size: 20, weight: .bold))
-                                    .padding(8)
-                                    .background(currentLetter == letter ? AppTheme.primaryColor.opacity(0.3) : Color.clear)
-                                    .cornerRadius(8)
-                            }
-                            .foregroundColor(currentLetter == letter ? AppTheme.primaryColor : .primary)
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-
-                TracingAppView(letter: currentLetter, showPath: $showPath)
-                    .padding(.horizontal)
-                    .padding(.top)
-                    .frame(height: geo.size.height * 0.55)
-
-                Toggle("Show Path", isOn: $showPath)
-                    .padding(.horizontal)
-
-                Spacer(minLength: geo.safeAreaInsets.bottom + 50)
-            }
-            .frame(width: geo.size.width, height: geo.size.height)
-            .background(AppTheme.adaptiveBackgroundColor(preferences: nil))
-        }
-        .ignoresSafeArea(edges: [.top, .bottom])
-    }
-}
-
-// Character message bubble component
 struct CharacterMessageBubble: View {
     let character: String
     let expression: ExpressiveCharacter.Expression
@@ -10425,7 +8735,8 @@ struct MyRewardsView: View {
                         .font(.largeTitle.bold())
                         .foregroundColor(AppTheme.adaptivePrimaryColor(preferences: prefs))
                         .padding(.top)
-
+                    
+                    // if none
                     if rewardsByLetter.isEmpty {
                         Text("You haven’t earned any rewards yet.\nStart practicing to collect some!")
                             .font(.subheadline)
@@ -10434,6 +8745,7 @@ struct MyRewardsView: View {
                             .padding(.top, 60)
                             .frame(maxWidth: .infinity)
                     } else {
+                        // displays full rewards list per letter
                         ForEach(rewardsByLetter.keys.sorted(), id: \.self) { letter in
                             if let rewards = rewardsByLetter[letter] {
                                 VStack(alignment: .leading, spacing: 8) {
@@ -10463,7 +8775,7 @@ struct MyRewardsView: View {
                                 .padding()
                                 .background(AppTheme.adaptiveCardBackgroundColor(preferences: prefs).opacity(0.95))
                                 .cornerRadius(20)
-                                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 3)
+                                .shadow(Color: .black.opacity(0.05), radius: 4, x: 0, y: 3)
                             }
                         }
                     }
@@ -10473,7 +8785,6 @@ struct MyRewardsView: View {
                 .padding()
             }
 
-            // MARK: - Tooltip Overlay
             if showTooltip, let reward = selectedReward {
                 Color.black.opacity(0.3).ignoresSafeArea()
                     .onTapGesture {
@@ -10523,6 +8834,8 @@ struct MyRewardsView: View {
     }
 
     private var rewardMeanings: [String: String] {
+        // for personal reference
+        // if reward tapped on, will display reasoning though
         [
             "🎯": "First attempt on this letter!",
             "⭐️": "Great score (90%+)!",
@@ -10540,10 +8853,6 @@ struct MyRewardsView: View {
     }
 }
 
-
-
-
-
 // Custom CharacterSelectionView with callback
 struct CharacterSelectionView: View {
     @EnvironmentObject var authManager: AuthManager
@@ -10553,7 +8862,7 @@ struct CharacterSelectionView: View {
     
     let onSelect: (String) -> Void
     
-    // Initialize with current character
+    // initialise with current character (usually fox to start with)
     init(currentCharacter: String, onSelect: @escaping (String) -> Void) {
         _selectedCharacter = State(initialValue: currentCharacter)
         self.onSelect = onSelect
@@ -10772,8 +9081,6 @@ struct FocusModeView: View {
         }
     }
 
-    // MARK: - Helpers
-
     private var hasEnoughData: Bool {
         weakestLetters.count == 6
     }
@@ -10787,8 +9094,6 @@ struct FocusModeView: View {
             weakestLetters = authManager.getWeakestLetters(for: performance.id, count: 6)
         }
     }
-
-    // MARK: - Subviews
 
     private var focusModeReadyView: some View {
         VStack(spacing: 10) {
@@ -10849,40 +9154,35 @@ struct FocusModeView: View {
     }
 }
 
+// simple PDF view of one StudentPerformance:
 struct ExportPDFView: View {
-    var performance: StudentPerformance
+    let performance: StudentPerformance
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("📘 Student Report")
-                .font(.title)
-                .bold()
+                .font(.title.bold())
 
             Text("Name: \(performance.studentName)")
-            Text("Average Score: \(Int(performance.overallAverage))%")
+            Text("Average: \(Int(performance.overallAverage))%")
             Text("Streak: \(performance.consecutiveDayStreak) days")
             Text("Last Practice: \(performance.lastPracticeDate.formatted(date: .abbreviated, time: .omitted))")
-
             Divider()
 
-            ForEach(performance.letterPerformances.sorted(by: { $0.letter < $1.letter })) { letter in
+            ForEach(performance.letterPerformances.sorted(by: { $0.letter < $1.letter })) { lp in
                 HStack {
-                    Text(letter.letter)
-                        .font(.headline)
-                        .frame(width: 30)
-                    Text("Avg: \(Int(letter.averageScore))%")
+                    Text(lp.letter).bold().frame(width: 30)
+                    Text("Avg: \(Int(lp.averageScore))%")
                     Spacer()
-                    Text("Attempts: \(letter.attempts)")
+                    Text("×\(lp.attempts)")
                 }
             }
         }
         .padding()
-        .frame(width: 300, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
-
-
-// graph stuff
+// graph stuff for teacher view
 struct GraphicalInsightsView: View {
     @EnvironmentObject var authManager: AuthManager
 
@@ -10901,13 +9201,13 @@ struct GraphicalInsightsView: View {
                     .font(AppTheme.roundedFont(size: 28, weight: .bold))
                     .padding(.top)
 
-                if let performance = performance {
+                if let perf = performance {
+                    // Letter Score Trends
                     VStack(alignment: .leading, spacing: 20) {
                         Text("📈 Letter Score Trends")
                             .font(AppTheme.roundedFont(size: 20, weight: .semibold))
-
                         Chart {
-                            ForEach(performance.letterPerformances.sorted(by: { $0.letter < $1.letter })) { lp in
+                            ForEach(perf.letterPerformances.sorted(by: { $0.letter < $1.letter })) { lp in
                                 LineMark(
                                     x: .value("Letter", lp.letter),
                                     y: .value("Average", lp.averageScore)
@@ -10921,22 +9221,19 @@ struct GraphicalInsightsView: View {
                     .background(AppTheme.adaptiveCardBackgroundColor(preferences: prefs))
                     .cornerRadius(16)
 
+                    // Mastery Breakdown
                     VStack(alignment: .leading, spacing: 20) {
                         Text("🎉 Mastery Breakdown")
                             .font(AppTheme.roundedFont(size: 20, weight: .semibold))
-
                         Chart {
                             BarMark(
                                 x: .value("Mastered", "Mastered"),
-                                y: .value("Count", performance.masteredLetters.count)
+                                y: .value("Count", perf.masteredLetters.count)
                             )
-                            .foregroundStyle(Color.green)
-
                             BarMark(
                                 x: .value("Needs Work", "Needs Work"),
-                                y: .value("Count", performance.lettersNeedingImprovement.count)
+                                y: .value("Count", perf.lettersNeedingImprovement.count)
                             )
-                            .foregroundStyle(Color.red)
                         }
                         .frame(height: 180)
                     }
@@ -10946,30 +9243,20 @@ struct GraphicalInsightsView: View {
 
                     // Export Buttons
                     VStack(alignment: .leading, spacing: 10) {
-                        Button(action: {
-                            let pages: [AnyView] = [
-                                AnyView(ExportPDFView(performance: performance))
-                            ]
-                            let fileName = "\(performance.studentName)_Report.pdf"
-                            let view = VStack(alignment: .leading, spacing: 16) {
-                                ForEach(pages.indices, id: \.self) { index in
-                                    pages[index]
-                                }
-                            }
-
+                        Button {
+                            let exportView = ExportPDFView(performance: perf)
+                            let fileName = "\(perf.studentName)_Report"
                             Task {
-                                await ExportHelper.exportPDF(view: view, fileName: fileName)
+                                await ExportHelper.exportViewAsPDF(exportView, fileName: fileName)
                             }
-                        }) {
+                        } label: {
                             Label("Export PDF", systemImage: "square.and.arrow.up")
                         }
                         .buttonStyle(.borderedProminent)
 
-                        Button(action: {
-                            Task {
-                                await ExportHelper.exportCSV(for: performance)
-                            }
-                        }) {
+                        Button {
+                            ExportHelper.exportCSV(perf)
+                        } label: {
                             Label("Export CSV", systemImage: "doc.plaintext")
                         }
                         .buttonStyle(.borderedProminent)
@@ -10989,6 +9276,7 @@ struct GraphicalInsightsView: View {
         .navigationTitle("Insights")
     }
 }
+
 
 struct LetterDrilldownView: View {
     let letter: String
@@ -11051,352 +9339,13 @@ struct LetterDrilldownView: View {
     }
 }
 
-struct TrendComparisonView: View {
-    @EnvironmentObject var authManager: AuthManager
-    @State private var selectedLetter: String? = nil
-    @State private var selectedRange: TimeRange = .allTime
-    @State private var exportImage: Image? = nil
-    @State private var showExportSheet = false
-
-    var classPerformance: [StudentPerformance] {
-        authManager.students.compactMap { authManager.getStudentPerformanceFromSQLite(for: $0.id) }
-    }
-
-    var letterAverages: [(letter: String, average: Double)] {
-        let allLetters = (65...90).compactMap { UnicodeScalar($0).map { String($0) } } // A-Z
-        return allLetters.map { letter in
-            let scores = classPerformance.compactMap {
-                $0.letterPerformances.first(where: { $0.letter == letter })?.averageScore
-            }
-            let avg = scores.isEmpty ? 0 : scores.reduce(0, +) / Double(scores.count)
-            return (letter, avg)
-        }
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                Text("📈 Class Letter Trends")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .padding(.top)
-
-                Picker("Time Range", selection: $selectedRange) {
-                    ForEach(TimeRange.allCases, id: \ .self) { range in
-                        Text(range.rawValue.capitalized).tag(range)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-
-                Chart(letterAverages, id: \ .letter) { item in
-                    BarMark(
-                        x: .value("Letter", item.letter),
-                        y: .value("Average", item.average)
-                    )
-                    .foregroundStyle(Color.accentColor.gradient)
-                    .cornerRadius(6)
-                    .annotation(position: .top) {
-                        Text("\(Int(item.average))%")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .chartYAxis(.hidden)
-                .frame(height: 260)
-                .padding()
-                .background(AppTheme.adaptiveCardBackgroundColor(preferences: authManager.currentUser?.preferences))
-                .cornerRadius(20)
-                .shadow(radius: 4)
-                .onTapGesture(coordinateSpace: .local) { location in
-                    // Optional: Add tap detection with ChartProxy if necessary
-                }
-                .overlay(
-                    Button(action: captureChartSnapshot) {
-                        Label("Export Chart Image", systemImage: "square.and.arrow.up")
-                            .padding(8)
-                            .background(.ultraThinMaterial)
-                            .cornerRadius(10)
-                    }
-                    .padding(), alignment: .topTrailing
-                )
-
-                if let exportImage = exportImage {
-                    exportImage
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: 220)
-                        .padding(.top)
-                        .transition(.scale)
-                }
-            }
-            .padding()
-        }
-        .sheet(item: $selectedLetter) { letter in
-            LetterDrilldownView(letter: letter, classPerformance: classPerformance)
-        }
-        .navigationTitle("Trends")
-    }
-
-    private func captureChartSnapshot() {
-        let renderer = ImageRenderer(content:
-            Chart(letterAverages, id: \ .letter) { item in
-                BarMark(x: .value("Letter", item.letter), y: .value("Average", item.average))
-                    .foregroundStyle(.blue)
-            }
-            .frame(width: 360, height: 240)
-        )
-
-        if let uiImage = renderer.uiImage {
-            exportImage = Image(uiImage: uiImage)
-            showExportSheet = true
-        }
-    }
-
-    enum TimeRange: String, CaseIterable {
-        case week, month, allTime
-    }
-}
-
-
-struct TeacherInsightsView: View {
-    @EnvironmentObject var authManager: AuthManager
-    @State private var selectedLetter: String? = nil
-
-    private var prefs: UserPreferences? {
-        authManager.currentUser?.preferences
-    }
-
-    private var classPerformance: [StudentPerformance] {
-        authManager.students.compactMap { authManager.getStudentPerformanceFromSQLite(for: $0.id) }
-    }
-
-    private var letterAverages: [(letter: String, average: Double)] {
-        let allLetters = (0..<26).map { i in
-            String(UnicodeScalar(65 + i)!) // 65 = "A"
-        }
-
-        return allLetters.map { letter in
-            let scores = classPerformance.compactMap {
-                $0.letterPerformances.first(where: { $0.letter == letter })?.averageScore
-            }
-            let average = scores.isEmpty ? 0 : scores.reduce(0, +) / Double(scores.count)
-            return (letter: letter, average: average)
-        }
-    }
-
-
-    private var masteryStats: (mastered: Int, needsWork: Int) {
-        var mastered = 0
-        var needsWork = 0
-        for performance in classPerformance {
-            mastered += performance.masteredLetters.count
-            needsWork += performance.lettersNeedingImprovement.count
-        }
-        return (mastered, needsWork)
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("📊 Class Insights")
-                    .font(AppTheme.roundedFont(size: 28, weight: .bold))
-
-                Text("🔠 Average Scores per Letter")
-                    .font(AppTheme.roundedFont(size: 20, weight: .semibold))
-
-                Chart(letterAverages, id: \.letter) { item in
-                    BarMark(
-                        x: .value("Letter", item.letter),
-                        y: .value("Score", item.average)
-                    )
-                    .foregroundStyle(AppTheme.primaryColor)
-                }
-                .chartOverlay { proxy in
-                    GeometryReader { geo in
-                        Rectangle()
-                            .fill(Color.clear)
-                            .contentShape(Rectangle())
-                            .gesture(
-                                DragGesture(minimumDistance: 0)
-                                    .onEnded { value in
-                                        if let letter = proxy.value(atX: value.location.x, as: String.self) {
-                                            selectedLetter = letter
-                                        }
-                                    }
-                            )
-                    }
-                }
-                .frame(height: 200)
-                .padding()
-                .background(AppTheme.adaptiveCardBackgroundColor(preferences: prefs))
-                .cornerRadius(16)
-
-                Text("🎯 Mastery Distribution")
-                    .font(AppTheme.roundedFont(size: 20, weight: .semibold))
-
-                Chart {
-                    BarMark(x: .value("Mastered", "Mastered"), y: .value("Count", masteryStats.mastered))
-                        .foregroundStyle(Color.green)
-                    BarMark(x: .value("Needs Work", "Needs Work"), y: .value("Count", masteryStats.needsWork))
-                        .foregroundStyle(Color.red)
-                }
-                .frame(height: 180)
-                .padding()
-                .background(AppTheme.adaptiveCardBackgroundColor(preferences: prefs))
-                .cornerRadius(16)
-            }
-            .padding()
-        }
-        .sheet(item: $selectedLetter) { letter in
-            LetterDrilldownView(letter: letter, classPerformance: classPerformance)
-        }
-        .background(AppTheme.adaptiveBackgroundColor(preferences: prefs))
-        .navigationTitle("Insights")
-    }
-}
-
-struct ClassInsightsView: View {
-    @EnvironmentObject var authManager: AuthManager
-    @State private var selectedLetter: String? = nil
-    @State private var searchText = ""
-    @State private var selectedTimeFrame: TimeFrame = .allTime
-
-    private var prefs: UserPreferences? {
-        authManager.currentUser?.preferences
-    }
-
-    private var classPerformance: [StudentPerformance] {
-        authManager.students.compactMap { authManager.getStudentPerformanceFromSQLite(for: $0.id) }
-    }
-
-    private var filteredClassPerformance: [StudentPerformance] {
-        if searchText.isEmpty {
-            return classPerformance
-        } else {
-            return classPerformance.filter {
-                $0.studentName.lowercased().contains(searchText.lowercased()) ||
-                $0.id.lowercased().contains(searchText.lowercased())
-            }
-        }
-    }
-
-    private var letterAverages: [(letter: String, average: Double)] {
-        let letters = (65...90).map { String(UnicodeScalar($0)!) } // A-Z
-        return letters.map { letter in
-            let scores = filteredClassPerformance.compactMap {
-                $0.letterPerformances.first(where: { $0.letter == letter })?.averageScore
-            }
-            let average = scores.isEmpty ? 0 : scores.reduce(0, +) / Double(scores.count)
-            return (letter, average)
-        }
-    }
-
-    private var masteryStats: (mastered: Int, needsWork: Int) {
-        let mastered = filteredClassPerformance.flatMap { $0.masteredLetters }.count
-        let needsWork = filteredClassPerformance.flatMap { $0.lettersNeedingImprovement }.count
-        return (mastered, needsWork)
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                headerSection
-                filterSection
-                letterBarChart
-                masteryBreakdownChart
-            }
-            .padding()
-        }
-        .background(AppTheme.adaptiveBackgroundColor(preferences: prefs))
-        .navigationTitle("📊 Class Insights")
-        .sheet(item: $selectedLetter) { letter in
-            LetterDrilldownView(
-                letter: letter,
-                classPerformance: filteredClassPerformance
-            )
-        }
-    }
-
-    private var headerSection: some View {
-        VStack(spacing: 12) {
-            Text("📊 Class Insights")
-                .font(AppTheme.roundedFont(size: 28, weight: .bold))
-
-            TextField("🔍 Search students...", text: $searchText)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .padding(.top, 4)
-        }
-    }
-
-    private var filterSection: some View {
-        Picker("Time Frame", selection: $selectedTimeFrame) {
-            ForEach(TimeFrame.allCases, id: \.self) { frame in
-                Text(frame.label).tag(frame)
-            }
-        }
-        .pickerStyle(.segmented)
-        .padding(.horizontal)
-    }
-
-    private var letterBarChart: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("🔠 Average Scores per Letter")
-                .font(AppTheme.roundedFont(size: 20, weight: .semibold))
-
-            Chart(letterAverages, id: \.letter) { item in
-                BarMark(
-                    x: .value("Letter", item.letter),
-                    y: .value("Average", item.average)
-                )
-                .foregroundStyle(AppTheme.primaryColor)
-                .annotation(position: .top) {
-                    Text("\(Int(item.average))%")
-                        .font(.caption)
-                }
-            }
-            .chartYAxis(.hidden)
-            .frame(height: 220)
-            Button("📤 Export Chart as Image") {
-                ExportHelper.exportChartImage(view: AnyView(self.letterBarChart))
-            }
-            .buttonStyle(.bordered)
-        }
-        .padding()
-        .background(AppTheme.adaptiveCardBackgroundColor(preferences: prefs))
-        .cornerRadius(16)
-    }
-
-    private var masteryBreakdownChart: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("🎯 Mastery Breakdown")
-                .font(AppTheme.roundedFont(size: 20, weight: .semibold))
-
-            Chart {
-                BarMark(x: .value("Type", "Mastered"), y: .value("Count", masteryStats.mastered))
-                    .foregroundStyle(Color.green)
-                BarMark(x: .value("Type", "Needs Work"), y: .value("Count", masteryStats.needsWork))
-                    .foregroundStyle(Color.red)
-            }
-            .frame(height: 180)
-
-            Button("📤 Export Breakdown Chart") {
-                ExportHelper.exportChartImage(view: AnyView(self.masteryBreakdownChart))
-            }
-            .buttonStyle(.bordered)
-        }
-        .padding()
-        .background(AppTheme.adaptiveCardBackgroundColor(preferences: prefs))
-        .cornerRadius(16)
-    }
-}
-
-// MARK: - Time Frame Enum
-
+// for insights based on teacher selected timeframe
 enum TimeFrame: String, CaseIterable {
     case week, month, allTime
 
     var label: String {
         switch self {
+            // emojis included w stuff for better clarity but mostly for aesthetics
         case .week: return "📅 Week"
         case .month: return "🗓️ Month"
         case .allTime: return "⏳ All Time"
@@ -11404,7 +9353,7 @@ enum TimeFrame: String, CaseIterable {
     }
 }
 
-// MARK: - Teacher Dashboard View
+// teachers view
 struct TeacherDashboardView: View {
     @EnvironmentObject var authManager: AuthManager
     @State private var selectedStudent: User? = nil
@@ -11568,7 +9517,8 @@ struct TrendsAnalyticsView: View {
     @State private var exportImage: Image?
     @State private var showExportSheet = false
     @State private var selectedRange: TimeRange = .allTime
-
+    
+// using the enum i had for the different timescales
     enum TimeRange: String, CaseIterable {
         case week, month, allTime
     }
@@ -11662,10 +9612,7 @@ struct TrendsAnalyticsView: View {
         }
     }
 }
-
-
-
-// MARK: - Student Detail View
+// per student details
 struct StudentDetailView: View {
     let student: User
     @EnvironmentObject var authManager: AuthManager
@@ -11771,10 +9718,10 @@ struct StudentDetailView: View {
 
             HStack(spacing: 16) {
                 if let best = best {
-                    HighlightBox(title: "Best Letter", value: best.letter, color: AppTheme.funGreen)
+                    HighlightBox(title: "Best Letter", value: best.letter, Color: AppTheme.funGreen)
                 }
                 if let mostImproved = mostImproved {
-                    HighlightBox(title: "Most Improved", value: mostImproved.letter, color: AppTheme.funBlue)
+                    HighlightBox(title: "Most Improved", value: mostImproved.letter, Color: AppTheme.funBlue)
                 }
             }
         }
@@ -11865,7 +9812,7 @@ struct StudentDetailView: View {
 struct HighlightBox: View {
     let title: String
     let value: String
-    let color: Color
+    let Color: Color
 
     var body: some View {
         VStack(spacing: 6) {
@@ -11874,16 +9821,17 @@ struct HighlightBox: View {
                 .foregroundColor(.secondary)
             Text(value)
                 .font(.system(size: 22, weight: .bold, design: .rounded))
-                .foregroundColor(color)
+                .foregroundColor(Color)
         }
         .frame(maxWidth: .infinity)
         .padding()
-        .background(Color(.systemGray6))
+        .background(SwiftUICore.Color(.systemGray6))
         .cornerRadius(10)
     }
 }
 
-// MARK: - Settings View
+// settings stuff
+// makes things customisable eg sound, dark mode etc
 struct SettingsView: View {
     @EnvironmentObject var authManager: AuthManager
     @State private var showAccessibilitySettings = false
@@ -12006,7 +9954,6 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - TracingCanvasView with EnvironmentObject
 struct TracingCanvasView: View {
     @EnvironmentObject var authManager: AuthManager
     let letter: String
@@ -12026,7 +9973,7 @@ struct TracingCanvasView: View {
                 .fill(Color.gray.opacity(0.1))
                 .border(Color.black, width: 1)
             
-            // Sample animation or reference path
+            //  reference path
             if isTrySampleMode {
                 TracingAnimatedPathView(letter: letter, progress: strokeProgress)
                     .stroke(Color.blue, lineWidth: 4)
@@ -12037,7 +9984,7 @@ struct TracingCanvasView: View {
                     .opacity(0.6)
             }
             
-            // User's drawn segments
+            // Users drawn segments
             ForEach(0..<userDrawnSegments.count, id: \.self) { index in
                 userDrawnSegments[index]
                     .stroke(Color.green, lineWidth: 4)
@@ -12065,7 +10012,6 @@ struct TracingCanvasView: View {
     }
 }
 
-// MARK: - TracingControlsView with EnvironmentObject
 struct TracingControlsView: View {
     @EnvironmentObject var authManager: AuthManager
     @Binding var currentLetterIndex: Int
@@ -12164,7 +10110,6 @@ struct TracingControlsView: View {
     }
 }
 
-// MARK: - TracingFeedbackView with EnvironmentObject
 struct TracingFeedbackView: View {
     @EnvironmentObject var authManager: AuthManager
     let score: Double
@@ -12301,7 +10246,6 @@ struct WeakLetterTestView: View {
     }
 }
 
-// MARK: - View to draw a segment path with progress
 struct SegmentPathView: Shape {
     var points: [CGPoint]
     var progress: CGFloat // 0.0 to 1.0
@@ -12320,7 +10264,7 @@ struct SegmentPathView: Shape {
         // Move to the first point
         path.move(to: points[0])
         
-        // If there's only one point, or progress is 0, return just the starting point
+        // If there's only one point // progress is 0 return just the starting point
         if points.count == 1 || progress <= 0 {
             return path
         }
@@ -12334,12 +10278,10 @@ struct SegmentPathView: Shape {
             path.addLine(to: points[i])
         }
         
-        // If we have a partial segment at the end
         if progress < 1.0 && pointsToInclude < totalPoints {
             let lastFullPointIndex = pointsToInclude - 1
             let nextPointIndex = lastFullPointIndex + 1
             
-            // Calculate how far between the last two points we should draw
             let segmentProgress = CGFloat(totalPoints - 1) * progress - CGFloat(lastFullPointIndex)
             
             // Get the last full point and the next point
@@ -12360,7 +10302,8 @@ struct SegmentPathView: Shape {
     }
 }
     
-// MARK: - Registration View
+// registration view
+// inspired by most ios apps i use (hence code slightly borrowed)
 struct RegisterView: View {
     @EnvironmentObject var authManager: AuthManager
     @Environment(\.presentationMode) var presentationMode
@@ -12445,102 +10388,6 @@ struct RegisterView: View {
         } else {
             registerError = true
             errorMessage = "Username already exists"
-        }
-    }
-}
-
-
-struct ProfileHeaderView: View {
-    let performance: StudentPerformance?
-    
-    var body: some View {
-        HStack {
-            Image(systemName: "person.circle.fill")
-                .font(.system(size: 50))
-                .foregroundColor(.blue)
-                .padding(.trailing, 10)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Your Progress")
-                    .font(.headline)
-                    .foregroundColor(.secondary)
-                
-                if let performance {
-                    Text("\(Int(performance.overallAverage))% Overall")
-                        .font(.title)
-                        .fontWeight(.bold)
-                }
-            }
-            
-            Spacer()
-            
-            ProgressCircle(progress: performance?.overallAverage ?? 0)
-                .frame(width: 80, height: 80)
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-    }
-}
-
-struct PracticeOptionsView: View {
-    let onFreePractice: () -> Void
-    let onFocusPractice: () -> Void
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Practice Options")
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            Button(action: onFreePractice) {
-                HStack {
-                    Image(systemName: "pencil")
-                        .font(.title2)
-                    
-                    VStack(alignment: .leading) {
-                        Text("Free Practice")
-                            .font(.headline)
-                        Text("Practice all letters in order")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chevron.right")
-                        .foregroundColor(.blue)
-                }
-                .padding()
-                .background(Color.blue.opacity(0.1))
-                .cornerRadius(12)
-            }
-            .buttonStyle(PlainButtonStyle())
-            
-            Button(action: onFocusPractice) {
-                HStack {
-                    Image(systemName: "star.fill")
-                        .font(.title2)
-                        .foregroundColor(.orange)
-                    
-                    VStack(alignment: .leading) {
-                        Text("Focus Practice")
-                            .font(.headline)
-                        Text("Practice letters that need improvement")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chevron.right")
-                        .foregroundColor(.blue)
-                }
-                .padding()
-                .background(Color.orange.opacity(0.1))
-                .cornerRadius(12)
-            }
-            .buttonStyle(PlainButtonStyle())
         }
     }
 }
@@ -12643,6 +10490,7 @@ struct WeakLettersSection: View {
     }
 }
 
+// character emojis! some ended up not being implemented because otherwise too many
 struct EmojiPickerSheet: View {
     let selectedEmoji: String
     let onSelect: (String) -> Void
